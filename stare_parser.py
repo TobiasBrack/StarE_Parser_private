@@ -170,9 +170,11 @@ def parse_block(lines, warnings, curve_no):
         "name": name,
         "label": label,
         "measured": measured,
-        "columns": [{"key": c, "unit": units[k] if k < len(units) else ""} for k, c in enumerate(columns[1:])],
         "n_rows": len(rows),
-        "data": data,
+        "data": {
+            "columns": [{"key": c, "unit": units[k] if k < len(units) else ""} for k, c in enumerate(columns[1:])],
+            "values": data,
+        },
         "results": results,
     }
     curve.update(section_fields)
@@ -256,12 +258,12 @@ def write_h5(parsed, out_path):
             for key in ("label", "measured"):
                 if c[key]:
                     g.attrs[key] = c[key]
-            units = {col["key"]: col["unit"] for col in c["columns"]}
-            for key, values in c["data"].items():
+            units = {col["key"]: col["unit"] for col in c["data"]["columns"]}
+            for key, values in c["data"]["values"].items():
                 ds = g.create_dataset(key, data=np.asarray(values, dtype="f8"), compression="gzip")
                 ds.attrs["unit"] = units.get(key, "")
             for key, value in c.items():
-                if key in {"name", "label", "measured", "columns", "n_rows", "data", "results"}:
+                if key in {"name", "label", "measured", "n_rows", "data", "results"}:
                     continue
                 if key == "Adjustment":
                     ag = g.create_group(key)
@@ -313,7 +315,7 @@ def main(argv=None):
             manifest.append({
                 "file": str(path), "curve": n, "name": c["name"], "measured": c["measured"],
                 "n_rows": c["n_rows"],
-                "t_range": [min(c["data"]["t"]), max(c["data"]["t"])] if c["n_rows"] else None,
+                "t_range": [min(c["data"]["values"]["t"]), max(c["data"]["values"]["t"])] if c["n_rows"] else None,
                 "results": [{"type": r["type"], **{k: v.get("value", v.get("text")) for k, v in r["fields"].items()}}
                             for r in c["results"]],
             })

@@ -31,6 +31,16 @@ class ParseBlockTests(unittest.TestCase):
         self.assertEqual(curve["Material Class"], "Metal")
         self.assertNotIn("sections", curve)
         self.assertEqual(
+            curve["data"],
+            {
+                "columns": [
+                    {"key": "t", "unit": "s"},
+                    {"key": "Signal", "unit": "mW"},
+                ],
+                "values": {"t": [0.0], "Signal": [1.5]},
+            },
+        )
+        self.assertEqual(
             curve["Adjustment"],
             {
                 "From": {"value": "-88.67 to 17.00", "unit": "min"},
