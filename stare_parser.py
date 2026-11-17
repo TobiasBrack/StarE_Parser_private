@@ -14,6 +14,11 @@ CURVE_START = re.compile(r"^Curve Name:\s*$")
 NUMERIC_ROW = re.compile(r"^\s*-?\d+\s+-?[\d.eE+-]+(\s+-?[\d.eE+-]+)+\s*$")
 SECTION = re.compile(r"^([A-Za-z][A-Za-z ]*):\s*$")
 NUM_UNIT = re.compile(r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(.*)$")
+FORMULA = re.compile(
+    r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
+    r"(?:\s*[+-]\s*\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\s*\*\s*T(?:\^\d+)?)+)"
+    r"(?:\s+(\S+))?$"
+)
 FOOTER = re.compile(r"^(Not signed|Signed)\b(.*)$")
 RULE = re.compile(r"^_{10,}$")
 
@@ -81,34 +86,43 @@ def parse_results(lines):
 
 
 def parse_sections(lines):
-    """Generic 'Header:' + indented body sections -> {header: [stripped lines]}."""
-    sections, current = {}, None
+    """Collect named sections and text outside them."""
+    sections, unsectioned, current = {}, [], None
     for line in lines:
         m = SECTION.match(line)
         if m and not line.startswith(" "):
             current = m.group(1)
             sections.setdefault(current, [])
-        elif current is not None and line.strip():
+        elif not line.strip():
+            if current == "Classification" and sections[current]:
+                current = None
+        elif current is not None:
             sections[current].append(line.strip())
-    return sections
+        else:
+            unsectioned.append(line.strip())
+    return sections, unsectioned
 
 
 def parse_section_fields(lines):
     """Convert curve sections to curve fields and parse Adjustment entries."""
-    sections = parse_sections(lines)
+    sections, unsectioned = parse_sections(lines)
     adjustment = {}
     for line in sections.pop("Adjustment", []):
         if ":" in line:
             name, value = (part.strip() for part in line.split(":", 1))
-            parsed = (
-                {"text": value}
-                if name.casefold() == "date" and parse_date(value)
-                else parse_value(value)
-            )
-            adjustment[name] = {
-                "value": parsed.get("value", parsed.get("text")),
-                "unit": parsed.get("unit", ""),
-            }
+            formula = FORMULA.fullmatch(value)
+            if formula:
+                adjustment[name] = {"value": formula.group(1), "unit": formula.group(2) or ""}
+            else:
+                parsed = (
+                    {"text": value}
+                    if name.casefold() == "date" and parse_date(value)
+                    else parse_value(value)
+                )
+                adjustment[name] = {
+                    "value": parsed.get("value", parsed.get("text")),
+                    "unit": parsed.get("unit", ""),
+                }
         elif line.startswith("From "):
             match = re.fullmatch(r"From\s+(.+?)\s+to\s+(.+?)\s+(\S+)", line)
             if match:
@@ -122,6 +136,8 @@ def parse_section_fields(lines):
             adjustment["details"] = {"value": line, "unit": ""}
 
     fields = {name: "\n".join(values) for name, values in sections.items()}
+    if unsectioned:
+        fields["unsectioned"] = "\n".join(unsectioned)
     if adjustment:
         fields["Adjustment"] = adjustment
     return fields
@@ -150,6 +166,8 @@ def parse_block(lines, warnings, curve_no):
     # Temporary testing cap; remove before the final version.
     while i < len(lines) and len(rows) < 10 and NUMERIC_ROW.match(lines[i]):
         rows.append(lines[i].split())
+        i += 1
+    while i < len(lines) and NUMERIC_ROW.match(lines[i]):
         i += 1
     data = {c: [float(r[k]) for r in rows] for k, c in enumerate(columns)}
 
@@ -312,10 +330,11 @@ def main(argv=None):
         if args.format in ("json", "both"):
             write_json(parsed, out / f"{stem}.json")
         for n, c in enumerate(parsed["curves"], 1):
+            time = c["data"]["values"].get("t", [])
             manifest.append({
                 "file": str(path), "curve": n, "name": c["name"], "measured": c["measured"],
                 "n_rows": c["n_rows"],
-                "t_range": [min(c["data"]["values"]["t"]), max(c["data"]["values"]["t"])] if c["n_rows"] else None,
+                "t_range": [min(time), max(time)] if time else None,
                 "results": [{"type": r["type"], **{k: v.get("value", v.get("text")) for k, v in r["fields"].items()}}
                             for r in c["results"]],
             })
