@@ -10,6 +10,6 @@ Text after a blank line following `Classification` is preserved in the curve's
 Adjustment formulas are kept as text values with their units, when present.
 Result groups without a description use the first field name's first word as
 their `type`, while retaining that field in `fields`.
-The manifest's `t_range` is null for curves without a time column.
+The command writes only the parsed output files; no `index.json` manifest is created.
 
 The current testing branch temporarily limits each curve to 10 data rows.

@@ -79,7 +79,7 @@ class ParseBlockTests(unittest.TestCase):
             "value": "0.0000 + 0.0000*T + 0.0000*T^2", "unit": "",
         })
 
-    def test_manifest_supports_curves_without_time(self):
+    def test_json_output_supports_curves_without_time(self):
         text = (
             "Curve Name:\nExample\nCurve Values:\n"
             "Index Abscissa Value\n[] [C]\n0 2.0 5.0\n"
@@ -89,8 +89,7 @@ class ParseBlockTests(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
             output = Path(directory) / "output"
             self.assertEqual(stare_parser.main([str(path), "-f", "json", "-o", str(output)]), 0)
-            index = json.loads((output / "index.json").read_text(encoding="utf-8"))
-            self.assertIsNone(index[0]["t_range"])
+            self.assertFalse((output / "index.json").exists())
             result = json.loads((output / "curve.json").read_text(encoding="utf-8"))
             self.assertEqual(
                 result["curves"][0]["data"]["Abscissa"],

@@ -394,7 +394,7 @@ def main(argv=None):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    manifest, failed = [], 0
+    failed, curve_count = 0, 0
     for path in files:
         try:
             parsed = parse_file(path)
@@ -407,19 +407,10 @@ def main(argv=None):
             write_h5(parsed, out / f"{stem}.h5")
         if args.format in ("json", "both"):
             write_json(parsed, out / f"{stem}.json")
-        for n, c in enumerate(parsed["curves"], 1):
-            time = c["data"].get("t", {}).get("values", [])
-            manifest.append({
-                "file": str(path), "curve": n, "name": c["name"], "measured": c["measured"],
-                "n_rows": c["n_rows"],
-                "t_range": [min(time), max(time)] if time else None,
-                "results": [{"type": r["type"], **{k: v.get("value", v.get("text")) for k, v in r["fields"].items()}}
-                            for r in c["results"]],
-            })
+        curve_count += len(parsed["curves"])
         for w in parsed["warnings"]:
             print(f"WARN {path.name}: {w}", file=sys.stderr)
-    (out / "index.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{len(files) - failed}/{len(files)} files parsed, {len(manifest)} curves -> {out}")
+    print(f"{len(files) - failed}/{len(files)} files parsed, {curve_count} curves -> {out}")
     return 1 if failed else 0
 
 
