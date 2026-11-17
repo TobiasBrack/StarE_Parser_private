@@ -69,6 +69,8 @@ def parse_results(lines):
     def finish():
         nonlocal current
         if current is not None and (current["type"] or current["fields"]):
+            if not current["type"] and current["fields"]:
+                current["type"] = next(iter(current["fields"])).split()[0]
             results.append(current)
         current = None
 

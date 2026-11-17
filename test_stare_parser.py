@@ -136,14 +136,25 @@ class ParseBlockTests(unittest.TestCase):
             "  Onset\t676.61 \u00b0C",
             "  Endset\t676.66 \u00b0C",
             "",
+            "  Integral\t195.82e+03 mJ",
+            "  Left Limit\t3.20 min",
+            "  Right Limit\t9.96 min",
+            "  Baseline Type\tline",
+            "",
             "  Calibration Results",
             "  Temperature\t666.06 \u00b0C",
             "  Delta H\t373.76 Jg^-1",
         ])
         self.assertEqual(results, [
-            {"type": "", "fields": {
+            {"type": "Onset", "fields": {
                 "Onset": {"value": 676.61, "unit": "\u00b0C"},
                 "Endset": {"value": 676.66, "unit": "\u00b0C"},
+            }},
+            {"type": "Integral", "fields": {
+                "Integral": {"value": 195820.0, "unit": "mJ"},
+                "Left Limit": {"value": 3.2, "unit": "min"},
+                "Right Limit": {"value": 9.96, "unit": "min"},
+                "Baseline Type": {"text": "line"},
             }},
             {"type": "Calibration Results", "fields": {
                 "Temperature": {"value": 666.06, "unit": "\u00b0C"},
@@ -170,6 +181,8 @@ class ParseBlockTests(unittest.TestCase):
         self.assertEqual(len(curve["data"]["t"]["values"]), 10)
         self.assertTrue(curve["results"])
         self.assertEqual(curve["results"][0]["fields"]["Onset"]["value"], 676.61)
+        self.assertEqual(curve["results"][1]["type"], "Integral")
+        self.assertIn("Integral", curve["results"][1]["fields"])
         self.assertEqual(
             curve["results"][2]["fields"]["Step"]["additional_values"][0],
             {"value": -2.4981, "unit": "mW"},
