@@ -65,8 +65,3 @@ Output per curve (JSON):
    continuation line is stored as `additional_values` of the previous field.
    Without a description, `type` is the first word of the first field name
    (that field is kept).
-
-## Temporary
-
-The current testing branch limits each curve to 10 data rows. Remove this
-in `parse_block` before the final version.

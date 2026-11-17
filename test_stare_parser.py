@@ -7,6 +7,22 @@ import stare_parser
 
 
 class ParseBlockTests(unittest.TestCase):
+    def test_reads_all_rows_and_following_sections(self):
+        lines = [
+            "Example",
+            "Curve Values:",
+            "Index t Signal",
+            "[s] [mW]",
+            *(f"{i} {i} {i * 2}" for i in range(1, 16)),
+            "Sample:",
+            "  Example sample",
+        ]
+        curve = stare_parser.parse_block(lines, [], 1)
+        self.assertEqual(curve["n_rows"], 15)
+        self.assertEqual(curve["data"]["t"]["values"], list(range(1, 16)))
+        self.assertEqual(curve["data"]["Signal"]["values"], list(range(2, 31, 2)))
+        self.assertEqual(curve["Sample"], "Example sample")
+
     def test_sections_are_curve_fields_and_adjustment_values_are_structured(self):
         lines = [
             "Bismuth, 16.11.2026 15:13:53",
@@ -177,7 +193,7 @@ class ParseBlockTests(unittest.TestCase):
         )
         self.assertIn("t", curve["data"])
         self.assertEqual(curve["data"]["t"]["unit"], "s")
-        self.assertEqual(len(curve["data"]["t"]["values"]), 10)
+        self.assertEqual(len(curve["data"]["t"]["values"]), 4656)
         self.assertTrue(curve["results"])
         self.assertEqual(curve["results"][0]["fields"]["Onset"]["value"], 676.61)
         self.assertEqual(curve["results"][1]["type"], "Integral")
