@@ -1,0 +1,284 @@
+"""Parse METTLER TOLEDO STARe text exports (1..n curves per file) to JSON / HDF5.
+
+No recomputation is done: results are taken verbatim from the STARe export.
+Parsing needs only the standard library; HDF5 output needs h5py + numpy.
+"""
+import argparse
+import json
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+CURVE_START = re.compile(r"^Curve Name:\s*$")
+NUMERIC_ROW = re.compile(r"^\s*-?\d+\s+-?[\d.eE+-]+(\s+-?[\d.eE+-]+)+\s*$")
+SECTION = re.compile(r"^([A-Za-z][A-Za-z ]*):\s*$")
+NUM_UNIT = re.compile(r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(.*)$")
+FOOTER = re.compile(r"^(Not signed|Signed)\b(.*)$")
+RULE = re.compile(r"^_{10,}$")
+
+
+def read_text(path):
+    raw = Path(path).read_bytes()
+    for enc in ("utf-8-sig", "cp1252"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1")
+
+
+def parse_date(text):
+    for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+        try:
+            return datetime.strptime(text.strip(), fmt).isoformat()
+        except ValueError:
+            pass
+    return None
+
+
+def split_name_line(line):
+    """'  name, 22.06.2026 12:42:01' -> (name, iso timestamp or None)."""
+    line = line.strip()
+    name, _, stamp = line.rpartition(", ")
+    iso = parse_date(stamp) if name else None
+    return (name, iso) if iso else (line, None)
+
+
+def parse_units(line):
+    return re.findall(r"\[([^\]]*)\]", line)
+
+
+def parse_value(text):
+    m = NUM_UNIT.match(text.strip())
+    if m:
+        return {"value": float(m.group(1)), "unit": m.group(2).strip()}
+    return {"text": text.strip()}
+
+
+def parse_results(lines):
+    """Group Results lines into entries: a line without a value starts a new entry."""
+    results = []
+    last_key = None
+    for line in lines:
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        parts = re.split(r"\s{2,}", line.strip(), maxsplit=1)
+        if len(parts) == 1:
+            results.append({"type": parts[0], "fields": {}})
+            last_key = None
+            continue
+        if not results:
+            results.append({"type": "", "fields": {}})
+        key, val = parts
+        if indent >= 4 and last_key:
+            key = f"{last_key} {key}"
+        else:
+            last_key = key
+        results[-1]["fields"][key] = parse_value(val)
+    return results
+
+
+def parse_sections(lines):
+    """Generic 'Header:' + indented body sections -> {header: [stripped lines]}."""
+    sections, current = {}, None
+    for line in lines:
+        m = SECTION.match(line)
+        if m and not line.startswith(" "):
+            current = m.group(1)
+            sections.setdefault(current, [])
+        elif current is not None and line.strip():
+            sections[current].append(line.strip())
+    return sections
+
+
+def parse_block(lines, warnings, curve_no):
+    i = 0
+    name_lines = []
+    while i < len(lines) and not lines[i].startswith("Curve Values:"):
+        if lines[i].strip():
+            name_lines.append(lines[i])
+        i += 1
+    if i >= len(lines) or not name_lines:
+        raise ValueError("block without 'Curve Values:' table")
+    name, measured = split_name_line(name_lines[0])
+    label = name_lines[1].strip() if len(name_lines) > 1 else None
+
+    i += 1
+    columns = lines[i].split()
+    units = parse_units(lines[i + 1])
+    if len(units) != len(columns) - 1:
+        warnings.append(f"curve {curve_no}: {len(columns)} columns vs {len(units)} units")
+    i += 2
+
+    rows = []
+    while i < len(lines) and NUMERIC_ROW.match(lines[i]):
+        rows.append(lines[i].split())
+        i += 1
+    data = {c: [float(r[k]) for r in rows] for k, c in enumerate(columns)}
+
+    index = data.pop("Index", None)
+    if index is not None and index != list(range(int(index[0]), int(index[0]) + len(index))):
+        warnings.append(f"curve {curve_no}: Index not contiguous")
+    t = data.get("t", [])
+    if any(b < a for a, b in zip(t, t[1:])):
+        warnings.append(f"curve {curve_no}: t not monotonic")
+
+    tail = lines[i:]
+    sections = parse_sections(tail)
+    sections.pop("Results", None)
+    start = _find(tail, "Results:")
+    results = parse_results(tail[start + 1:_results_end(tail)]) if start >= 0 else []
+
+    return {
+        "name": name,
+        "label": label,
+        "measured": measured,
+        "columns": [{"key": c, "unit": units[k] if k < len(units) else ""} for k, c in enumerate(columns[1:])],
+        "n_rows": len(rows),
+        "data": data,
+        "results": results,
+        "sections": sections,
+    }
+
+
+def _find(lines, header):
+    for k, line in enumerate(lines):
+        if line.strip() == header:
+            return k
+    return -1
+
+
+def _results_end(lines):
+    start = _find(lines, "Results:") + 1
+    for k in range(start, len(lines)):
+        if SECTION.match(lines[k]) and not lines[k].startswith(" "):
+            return k
+    return len(lines)
+
+
+def parse_file(path):
+    path = Path(path)
+    lines = read_text(path).splitlines()
+    warnings = []
+
+    exported = None
+    if lines and lines[0].startswith("Title"):
+        exported = parse_date(lines[0][5:].strip())
+
+    starts = [k for k, line in enumerate(lines) if CURVE_START.match(line)]
+    if not starts:
+        raise ValueError("no 'Curve Name:' found")
+
+    software, signed = None, None
+    for line in lines:
+        m = FOOTER.match(line.strip())
+        if m:
+            signed = m.group(1) == "Signed"
+            software = m.group(2).strip() or None
+    # Keep footer out of the last block's sections
+    end = len(lines)
+    for k in range(len(lines) - 1, starts[-1], -1):
+        if RULE.match(lines[k]):
+            end = k
+            break
+
+    curves = []
+    for n, s in enumerate(starts):
+        stop = starts[n + 1] if n + 1 < len(starts) else end
+        try:
+            curves.append(parse_block(lines[s + 1:stop], warnings, n + 1))
+        except ValueError as exc:
+            warnings.append(f"curve {n + 1}: {exc}")
+
+    return {
+        "schema_version": 1,
+        "source": {"file": path.name, "exported": exported, "software": software, "signed": signed},
+        "curves": curves,
+        "warnings": warnings,
+    }
+
+
+def write_json(parsed, out_path):
+    Path(out_path).write_text(json.dumps(parsed, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def write_h5(parsed, out_path):
+    import h5py
+    import numpy as np
+
+    with h5py.File(out_path, "w") as f:
+        for k, v in parsed["source"].items():
+            if v is not None:
+                f.attrs[k] = v
+        f.attrs["schema_version"] = parsed["schema_version"]
+        f.attrs["n_curves"] = len(parsed["curves"])
+        for n, c in enumerate(parsed["curves"], 1):
+            g = f.create_group(f"curve_{n:02d}")
+            g.attrs["name"] = c["name"]
+            for key in ("label", "measured"):
+                if c[key]:
+                    g.attrs[key] = c[key]
+            units = {col["key"]: col["unit"] for col in c["columns"]}
+            for key, values in c["data"].items():
+                ds = g.create_dataset(key, data=np.asarray(values, dtype="f8"), compression="gzip")
+                ds.attrs["unit"] = units.get(key, "")
+            rg = g.create_group("results")
+            for r, res in enumerate(c["results"], 1):
+                eg = rg.create_group(f"{r:02d}")
+                eg.attrs["type"] = res["type"]
+                for key, val in res["fields"].items():
+                    if "value" in val:
+                        eg.attrs[key] = val["value"]
+                        eg.attrs[key + " [unit]"] = val["unit"]
+                    else:
+                        eg.attrs[key] = val["text"]
+            sg = g.create_group("sections")
+            for header, body in c["sections"].items():
+                sg.attrs[header] = "\n".join(body)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("inputs", nargs="+", help="txt files or folders (searched recursively)")
+    ap.add_argument("-o", "--out", default="out", help="output folder")
+    ap.add_argument("-f", "--format", choices=["h5", "json", "both"], default="h5")
+    args = ap.parse_args(argv)
+
+    files = []
+    for p in map(Path, args.inputs):
+        files += sorted(p.rglob("*.txt")) if p.is_dir() else [p]
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    manifest, failed = [], 0
+    for path in files:
+        try:
+            parsed = parse_file(path)
+        except Exception as exc:
+            print(f"FAIL {path}: {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        stem = path.stem
+        if args.format in ("h5", "both"):
+            write_h5(parsed, out / f"{stem}.h5")
+        if args.format in ("json", "both"):
+            write_json(parsed, out / f"{stem}.json")
+        for n, c in enumerate(parsed["curves"], 1):
+            manifest.append({
+                "file": str(path), "curve": n, "name": c["name"], "measured": c["measured"],
+                "n_rows": c["n_rows"],
+                "t_range": [min(c["data"]["t"]), max(c["data"]["t"])] if c["n_rows"] else None,
+                "results": [{"type": r["type"], **{k: v.get("value", v.get("text")) for k, v in r["fields"].items()}}
+                            for r in c["results"]],
+            })
+        for w in parsed["warnings"]:
+            print(f"WARN {path.name}: {w}", file=sys.stderr)
+    (out / "index.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"{len(files) - failed}/{len(files)} files parsed, {len(manifest)} curves -> {out}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
