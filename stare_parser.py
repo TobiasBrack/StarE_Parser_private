@@ -14,6 +14,11 @@ CURVE_START = re.compile(r"^Curve Name:\s*$")
 NUMERIC_ROW = re.compile(r"^\s*-?\d+\s+-?[\d.eE+-]+(\s+-?[\d.eE+-]+)+\s*$")
 SECTION = re.compile(r"^([A-Za-z][A-Za-z ]*):\s*$")
 NUM_UNIT = re.compile(r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(.*)$")
+FORMULA = re.compile(
+    r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
+    r"(?:\s*[+-]\s*\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\s*\*\s*T(?:\^\d+)?)+)"
+    r"(?:\s+(\S+))?$"
+)
 FOOTER = re.compile(r"^(Not signed|Signed)\b(.*)$")
 RULE = re.compile(r"^_{10,}$")
 
@@ -57,40 +62,141 @@ def parse_value(text):
 
 
 def parse_results(lines):
-    """Group Results lines into entries: a line without a value starts a new entry."""
+    """Parse tab- or spacing-delimited result fields, preserving result groups."""
     results = []
-    last_key = None
+    current = None
+
+    def finish():
+        nonlocal current
+        if current is not None and (current["type"] or current["fields"]):
+            if not current["type"] and current["fields"]:
+                current["type"] = next(iter(current["fields"])).split()[0]
+            results.append(current)
+        current = None
+
     for line in lines:
         if not line.strip():
+            finish()
             continue
         indent = len(line) - len(line.lstrip())
-        parts = re.split(r"\s{2,}", line.strip(), maxsplit=1)
+        parts = re.split(r"(?:\t+|\s{2,})", line.strip(), maxsplit=1)
         if len(parts) == 1:
-            results.append({"type": parts[0], "fields": {}})
-            last_key = None
+            if current is None:
+                current = {"type": "", "fields": {}}
+            text = parts[0]
+            if current["fields"] and indent > 0:
+                key = next(reversed(current["fields"]))
+                value = parse_value(text)
+                previous = current["fields"][key]
+                previous.setdefault("additional_values", []).append(value)
+            elif not current["type"]:
+                current["type"] = text
+            else:
+                current["type"] = f"{current['type']} {text}"
             continue
-        if not results:
-            results.append({"type": "", "fields": {}})
+        if current is None:
+            current = {"type": "", "fields": {}}
         key, val = parts
-        if indent >= 4 and last_key:
-            key = f"{last_key} {key}"
-        else:
-            last_key = key
-        results[-1]["fields"][key] = parse_value(val)
+        current["fields"][key.strip()] = parse_value(val.strip())
+    finish()
     return results
 
 
 def parse_sections(lines):
-    """Generic 'Header:' + indented body sections -> {header: [stripped lines]}."""
-    sections, current = {}, None
+    """Collect named sections and text outside them."""
+    sections, unsectioned, current = {}, [], None
     for line in lines:
         m = SECTION.match(line)
         if m and not line.startswith(" "):
             current = m.group(1)
             sections.setdefault(current, [])
-        elif current is not None and line.strip():
+        elif not line.strip():
+            if current == "Classification" and sections[current]:
+                current = None
+        elif current is not None:
             sections[current].append(line.strip())
-    return sections
+        else:
+            unsectioned.append(line.strip())
+    return sections, unsectioned
+
+
+def parse_section_fields(lines):
+    """Convert curve sections to curve fields and parse Adjustment entries."""
+    sections, unsectioned = parse_sections(lines)
+    sections.pop("Adjustment", None)
+
+    fields = {name: "\n".join(values) for name, values in sections.items()}
+    if unsectioned:
+        fields["unsectioned"] = "\n".join(unsectioned)
+    adjustment = _parse_adjustment(lines)
+    if adjustment:
+        fields["Adjustment"] = adjustment
+    return fields
+
+
+def _adjustment_value(text, name):
+    formula = FORMULA.fullmatch(text)
+    if formula:
+        return {"value": formula.group(1), "unit": formula.group(2) or ""}
+    parsed = (
+        {"text": text}
+        if name.casefold() == "date" and parse_date(text)
+        else parse_value(text)
+    )
+    return {
+        "value": parsed.get("value", parsed.get("text")),
+        "unit": parsed.get("unit", ""),
+    }
+
+
+def _parse_adjustment(lines):
+    adjustment = {}
+    start = _find(lines, "Adjustment:")
+    if start < 0:
+        return adjustment
+
+    group = None
+    group_indent = None
+    for line in lines[start + 1:]:
+        if SECTION.match(line) and not line.startswith(" "):
+            break
+        if not line.strip():
+            continue
+        expanded = line.expandtabs(8)
+        indent = len(expanded) - len(expanded.lstrip())
+        text = expanded.strip()
+        if text.endswith(":") and not text[:-1].strip():
+            continue
+        if text.endswith(":") and not text.split(":", 1)[1].strip():
+            name = text[:-1].strip()
+            if group is None or indent <= group_indent:
+                group = name
+                group_indent = indent
+                adjustment[group] = {}
+                continue
+        if ":" in text:
+            name, value = (part.strip() for part in text.split(":", 1))
+            if group is not None and indent > group_indent:
+                adjustment[group][name] = _adjustment_value(value, name)
+            else:
+                group = None
+                adjustment[name] = _adjustment_value(value, name)
+            continue
+        if text.startswith("From "):
+            match = re.fullmatch(r"From\s+(-?[\d.]+(?:[eE][+-]?\d+)?)\s+to\s+(-?[\d.]+(?:[eE][+-]?\d+)?)\s+(\S+)", text)
+            if match:
+                adjustment["range"] = {
+                    "values": [float(match.group(1)), float(match.group(2))],
+                    "unit": match.group(3),
+                }
+            else:
+                adjustment["details"] = {"value": text, "unit": ""}
+        elif group is not None and indent > group_indent:
+            adjustment[group]["description"] = text
+        else:
+            group = None
+            adjustment["details"] = {"value": text, "unit": ""}
+    return adjustment
 
 
 def parse_block(lines, warnings, curve_no):
@@ -124,23 +230,31 @@ def parse_block(lines, warnings, curve_no):
     t = data.get("t", [])
     if any(b < a for a, b in zip(t, t[1:])):
         warnings.append(f"curve {curve_no}: t not monotonic")
+    column_units = {
+        column: units[k] if k < len(units) else ""
+        for k, column in enumerate(c for c in columns if c != "Index")
+    }
+    data = {
+        key: {"values": values, "unit": column_units.get(key, "")}
+        for key, values in data.items()
+    }
 
     tail = lines[i:]
-    sections = parse_sections(tail)
-    sections.pop("Results", None)
+    section_fields = parse_section_fields(tail)
+    section_fields.pop("Results", None)
     start = _find(tail, "Results:")
     results = parse_results(tail[start + 1:_results_end(tail)]) if start >= 0 else []
 
-    return {
+    curve = {
         "name": name,
         "label": label,
         "measured": measured,
-        "columns": [{"key": c, "unit": units[k] if k < len(units) else ""} for k, c in enumerate(columns[1:])],
         "n_rows": len(rows),
         "data": data,
         "results": results,
-        "sections": sections,
     }
+    curve.update(section_fields)
+    return curve
 
 
 def _find(lines, header):
@@ -208,6 +322,21 @@ def write_h5(parsed, out_path):
     import h5py
     import numpy as np
 
+    def write_adjustment(parent, name, field):
+        entry = parent.create_group(name)
+        if "values" in field:
+            entry.attrs["values"] = field["values"]
+            entry.attrs["unit"] = field["unit"]
+        elif "value" in field:
+            entry.attrs["value"] = field["value"]
+            entry.attrs["unit"] = field["unit"]
+        else:
+            for subname, subfield in field.items():
+                if isinstance(subfield, dict):
+                    write_adjustment(entry, subname, subfield)
+                else:
+                    entry.attrs[subname] = subfield
+
     with h5py.File(out_path, "w") as f:
         for k, v in parsed["source"].items():
             if v is not None:
@@ -220,10 +349,22 @@ def write_h5(parsed, out_path):
             for key in ("label", "measured"):
                 if c[key]:
                     g.attrs[key] = c[key]
-            units = {col["key"]: col["unit"] for col in c["columns"]}
-            for key, values in c["data"].items():
-                ds = g.create_dataset(key, data=np.asarray(values, dtype="f8"), compression="gzip")
-                ds.attrs["unit"] = units.get(key, "")
+            for key, column in c["data"].items():
+                ds = g.create_dataset(
+                    key,
+                    data=np.asarray(column["values"], dtype="f8"),
+                    compression="gzip",
+                )
+                ds.attrs["unit"] = column["unit"]
+            for key, value in c.items():
+                if key in {"name", "label", "measured", "n_rows", "data", "results"}:
+                    continue
+                if key == "Adjustment":
+                    ag = g.create_group(key)
+                    for name, field in value.items():
+                        write_adjustment(ag, name, field)
+                else:
+                    g.attrs[key] = value
             rg = g.create_group("results")
             for r, res in enumerate(c["results"], 1):
                 eg = rg.create_group(f"{r:02d}")
@@ -232,27 +373,29 @@ def write_h5(parsed, out_path):
                     if "value" in val:
                         eg.attrs[key] = val["value"]
                         eg.attrs[key + " [unit]"] = val["unit"]
+                        if "additional_values" in val:
+                            eg.attrs[key + " [additional values]"] = json.dumps(
+                                val["additional_values"], ensure_ascii=False
+                            )
                     else:
                         eg.attrs[key] = val["text"]
-            sg = g.create_group("sections")
-            for header, body in c["sections"].items():
-                sg.attrs[header] = "\n".join(body)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("inputs", nargs="+", help="txt files or folders (searched recursively)")
-    ap.add_argument("-o", "--out", default="out", help="output folder")
+    ap.add_argument("-o", "--out", default=None,
+                    help="optional output folder (default: next to each source file)")
     ap.add_argument("-f", "--format", choices=["h5", "json", "both"], default="h5")
     args = ap.parse_args(argv)
 
     files = []
     for p in map(Path, args.inputs):
         files += sorted(p.rglob("*.txt")) if p.is_dir() else [p]
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
+    if args.out:
+        Path(args.out).mkdir(parents=True, exist_ok=True)
 
-    manifest, failed = [], 0
+    failed, curve_count = 0, 0
     for path in files:
         try:
             parsed = parse_file(path)
@@ -260,23 +403,16 @@ def main(argv=None):
             print(f"FAIL {path}: {exc}", file=sys.stderr)
             failed += 1
             continue
+        target = Path(args.out) if args.out else path.parent
         stem = path.stem
         if args.format in ("h5", "both"):
-            write_h5(parsed, out / f"{stem}.h5")
+            write_h5(parsed, target / f"{stem}.h5")
         if args.format in ("json", "both"):
-            write_json(parsed, out / f"{stem}.json")
-        for n, c in enumerate(parsed["curves"], 1):
-            manifest.append({
-                "file": str(path), "curve": n, "name": c["name"], "measured": c["measured"],
-                "n_rows": c["n_rows"],
-                "t_range": [min(c["data"]["t"]), max(c["data"]["t"])] if c["n_rows"] else None,
-                "results": [{"type": r["type"], **{k: v.get("value", v.get("text")) for k, v in r["fields"].items()}}
-                            for r in c["results"]],
-            })
+            write_json(parsed, target / f"{stem}.json")
+        curve_count += len(parsed["curves"])
         for w in parsed["warnings"]:
             print(f"WARN {path.name}: {w}", file=sys.stderr)
-    (out / "index.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{len(files) - failed}/{len(files)} files parsed, {len(manifest)} curves -> {out}")
+    print(f"{len(files) - failed}/{len(files)} files parsed, {curve_count} curves")
     return 1 if failed else 0
 
 
