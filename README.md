@@ -20,6 +20,15 @@ One output file per input file is written, named after the input. No
 `index.json` is created. Failures and warnings are printed to stderr.
 Tests: `python -m unittest`.
 
+### Batch JSON script
+
+Run `python parse_directory.py path/to/directory` to recursively parse `.txt`
+files using the imported `stare_parser` module. Each JSON file is written next
+to its source; existing JSON files with the same name are overwritten. Errors
+are reported and processing continues with the remaining files. The script
+exits with a nonzero status if a file fails or no `.txt` files are found.
+JSON output needs only the Python standard library.
+
 ## What it does
 
 An export may contain several curves. For each curve the parser extracts

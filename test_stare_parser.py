@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import stare_parser
+import parse_directory
 
 
 class ParseBlockTests(unittest.TestCase):
@@ -202,6 +203,29 @@ class ParseBlockTests(unittest.TestCase):
             curve["results"][2]["fields"]["Step"]["additional_values"][0],
             {"value": -2.4981, "unit": "mW"},
         )
+
+
+class BatchTests(unittest.TestCase):
+    def test_batch_recurses_and_continues_after_failure(self):
+        text = (
+            "Curve Name:\nExample\nCurve Values:\n"
+            "Index t Signal\n[s] [mW]\n0 2.0 5.0\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / "nested"
+            nested.mkdir()
+            (root / "bad.txt").write_text("not a curve", encoding="utf-8")
+            (nested / "curve.txt").write_text(text, encoding="utf-8")
+
+            self.assertEqual(parse_directory.main([str(root)]), 1)
+            output = json.loads((nested / "curve.json").read_text(encoding="utf-8"))
+            self.assertEqual(output["curves"][0]["data"]["t"]["values"], [2.0])
+            self.assertFalse((root / "bad.json").exists())
+
+    def test_empty_directory_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(parse_directory.main([directory]), 1)
 
 
 if __name__ == "__main__":
