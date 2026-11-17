@@ -62,26 +62,41 @@ def parse_value(text):
 
 
 def parse_results(lines):
-    """Group Results lines into entries: a line without a value starts a new entry."""
+    """Parse tab- or spacing-delimited result fields, preserving result groups."""
     results = []
-    last_key = None
+    current = None
+
+    def finish():
+        nonlocal current
+        if current is not None and (current["type"] or current["fields"]):
+            results.append(current)
+        current = None
+
     for line in lines:
         if not line.strip():
+            finish()
             continue
         indent = len(line) - len(line.lstrip())
-        parts = re.split(r"\s{2,}", line.strip(), maxsplit=1)
+        parts = re.split(r"(?:\t+|\s{2,})", line.strip(), maxsplit=1)
         if len(parts) == 1:
-            results.append({"type": parts[0], "fields": {}})
-            last_key = None
+            if current is None:
+                current = {"type": "", "fields": {}}
+            text = parts[0]
+            if current["fields"] and indent > 0:
+                key = next(reversed(current["fields"]))
+                value = parse_value(text)
+                previous = current["fields"][key]
+                previous.setdefault("additional_values", []).append(value)
+            elif not current["type"]:
+                current["type"] = text
+            else:
+                current["type"] = f"{current['type']} {text}"
             continue
-        if not results:
-            results.append({"type": "", "fields": {}})
+        if current is None:
+            current = {"type": "", "fields": {}}
         key, val = parts
-        if indent >= 4 and last_key:
-            key = f"{last_key} {key}"
-        else:
-            last_key = key
-        results[-1]["fields"][key] = parse_value(val)
+        current["fields"][key.strip()] = parse_value(val.strip())
+    finish()
     return results
 
 
@@ -106,41 +121,80 @@ def parse_sections(lines):
 def parse_section_fields(lines):
     """Convert curve sections to curve fields and parse Adjustment entries."""
     sections, unsectioned = parse_sections(lines)
+    sections.pop("Adjustment", None)
+
+    fields = {name: "\n".join(values) for name, values in sections.items()}
+    if unsectioned:
+        fields["unsectioned"] = "\n".join(unsectioned)
+    adjustment = _parse_adjustment(lines)
+    if adjustment:
+        fields["Adjustment"] = adjustment
+    return fields
+
+
+def _adjustment_value(text, name):
+    formula = FORMULA.fullmatch(text)
+    if formula:
+        return {"value": formula.group(1), "unit": formula.group(2) or ""}
+    parsed = (
+        {"text": text}
+        if name.casefold() == "date" and parse_date(text)
+        else parse_value(text)
+    )
+    return {
+        "value": parsed.get("value", parsed.get("text")),
+        "unit": parsed.get("unit", ""),
+    }
+
+
+def _parse_adjustment(lines):
     adjustment = {}
-    for line in sections.pop("Adjustment", []):
-        if ":" in line:
-            name, value = (part.strip() for part in line.split(":", 1))
-            formula = FORMULA.fullmatch(value)
-            if formula:
-                adjustment[name] = {"value": formula.group(1), "unit": formula.group(2) or ""}
+    start = _find(lines, "Adjustment:")
+    if start < 0:
+        return adjustment
+
+    group = None
+    group_indent = None
+    for line in lines[start + 1:]:
+        if SECTION.match(line) and not line.startswith(" "):
+            break
+        if not line.strip():
+            continue
+        expanded = line.expandtabs(8)
+        indent = len(expanded) - len(expanded.lstrip())
+        text = expanded.strip()
+        if text.endswith(":") and not text[:-1].strip():
+            continue
+        if text.endswith(":") and not text.split(":", 1)[1].strip():
+            name = text[:-1].strip()
+            if group is None or indent <= group_indent:
+                group = name
+                group_indent = indent
+                adjustment[group] = {}
+                continue
+        if ":" in text:
+            name, value = (part.strip() for part in text.split(":", 1))
+            if group is not None and indent > group_indent:
+                adjustment[group][name] = _adjustment_value(value, name)
             else:
-                parsed = (
-                    {"text": value}
-                    if name.casefold() == "date" and parse_date(value)
-                    else parse_value(value)
-                )
-                adjustment[name] = {
-                    "value": parsed.get("value", parsed.get("text")),
-                    "unit": parsed.get("unit", ""),
-                }
-        elif line.startswith("From "):
-            match = re.fullmatch(r"From\s+(.+?)\s+to\s+(.+?)\s+(\S+)", line)
+                group = None
+                adjustment[name] = _adjustment_value(value, name)
+            continue
+        if text.startswith("From "):
+            match = re.fullmatch(r"From\s+(.+?)\s+to\s+(.+?)\s+(\S+)", text)
             if match:
                 adjustment["From"] = {
                     "value": f"{match.group(1)} to {match.group(2)}",
                     "unit": match.group(3),
                 }
             else:
-                adjustment["details"] = {"value": line, "unit": ""}
+                adjustment["details"] = {"value": text, "unit": ""}
+        elif group is not None and indent > group_indent:
+            adjustment[group]["description"] = text
         else:
-            adjustment["details"] = {"value": line, "unit": ""}
-
-    fields = {name: "\n".join(values) for name, values in sections.items()}
-    if unsectioned:
-        fields["unsectioned"] = "\n".join(unsectioned)
-    if adjustment:
-        fields["Adjustment"] = adjustment
-    return fields
+            group = None
+            adjustment["details"] = {"value": text, "unit": ""}
+    return adjustment
 
 
 def parse_block(lines, warnings, curve_no):
@@ -264,6 +318,18 @@ def write_h5(parsed, out_path):
     import h5py
     import numpy as np
 
+    def write_adjustment(parent, name, field):
+        entry = parent.create_group(name)
+        if "value" in field:
+            entry.attrs["value"] = field["value"]
+            entry.attrs["unit"] = field["unit"]
+        else:
+            for subname, subfield in field.items():
+                if isinstance(subfield, dict):
+                    write_adjustment(entry, subname, subfield)
+                else:
+                    entry.attrs[subname] = subfield
+
     with h5py.File(out_path, "w") as f:
         for k, v in parsed["source"].items():
             if v is not None:
@@ -286,9 +352,7 @@ def write_h5(parsed, out_path):
                 if key == "Adjustment":
                     ag = g.create_group(key)
                     for name, field in value.items():
-                        eg = ag.create_group(name)
-                        eg.attrs["value"] = field["value"]
-                        eg.attrs["unit"] = field["unit"]
+                        write_adjustment(ag, name, field)
                 else:
                     g.attrs[key] = value
             rg = g.create_group("results")
@@ -299,6 +363,10 @@ def write_h5(parsed, out_path):
                     if "value" in val:
                         eg.attrs[key] = val["value"]
                         eg.attrs[key + " [unit]"] = val["unit"]
+                        if "additional_values" in val:
+                            eg.attrs[key + " [additional values]"] = json.dumps(
+                                val["additional_values"], ensure_ascii=False
+                            )
                     else:
                         eg.attrs[key] = val["text"]
 

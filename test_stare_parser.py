@@ -97,6 +97,81 @@ class ParseBlockTests(unittest.TestCase):
             result = json.loads((output / "curve.json").read_text(encoding="utf-8"))
             self.assertEqual(result["curves"][0]["data"]["values"]["Abscissa"], [2.0])
 
+    def test_indented_adjustment_groups_and_tab_delimited_results(self):
+        fields = stare_parser.parse_section_fields([
+            "Adjustment:",
+            "  From 0.00 to 77.58 min",
+            "  Sample Temperature:",
+            "    TGA/SF SDTA FRS2",
+            "    Tc     : 25.00 \u00b0C",
+            "    dTs(T) : 0.0000 + 0.0000*T + 0.0000*T^2 \u00b0C",
+            "  Heat Flow:",
+            "    E Indium      : 26.1822 1/mW",
+            "    dE relative   : 0.0000 + 0.0000*T + 0.0000*T^2",
+            "      date        : -",
+            "Sample Holder:",
+            "  Material: Ceramic",
+        ])
+        self.assertEqual(fields["Adjustment"], {
+            "From": {"value": "0.00 to 77.58", "unit": "min"},
+            "Sample Temperature": {
+                "description": "TGA/SF SDTA FRS2",
+                "Tc": {"value": 25.0, "unit": "\u00b0C"},
+                "dTs(T)": {
+                    "value": "0.0000 + 0.0000*T + 0.0000*T^2",
+                    "unit": "\u00b0C",
+                },
+            },
+            "Heat Flow": {
+                "E Indium": {"value": 26.1822, "unit": "1/mW"},
+                "dE relative": {
+                    "value": "0.0000 + 0.0000*T + 0.0000*T^2",
+                    "unit": "",
+                },
+                "date": {"value": "-", "unit": ""},
+            },
+        })
+
+        results = stare_parser.parse_results([
+            "  Onset\t676.61 \u00b0C",
+            "  Endset\t676.66 \u00b0C",
+            "",
+            "  Calibration Results",
+            "  Temperature\t666.06 \u00b0C",
+            "  Delta H\t373.76 Jg^-1",
+        ])
+        self.assertEqual(results, [
+            {"type": "", "fields": {
+                "Onset": {"value": 676.61, "unit": "\u00b0C"},
+                "Endset": {"value": 676.66, "unit": "\u00b0C"},
+            }},
+            {"type": "Calibration Results", "fields": {
+                "Temperature": {"value": 666.06, "unit": "\u00b0C"},
+                "Delta H": {"value": 373.76, "unit": "Jg^-1"},
+            }},
+        ])
+
+    def test_messy_export_has_nested_adjustment_and_parsed_results(self):
+        path = Path(__file__).parent / (
+            "curvefiles/TGA_DSC 3+ Adjust  TabVal  Expert  "
+            "Al_F_ID2062_2_add2_messy.txt"
+        )
+        curve = stare_parser.parse_file(path)["curves"][0]
+        self.assertEqual(
+            curve["Adjustment"]["Sample Temperature"]["description"],
+            "TGA/SF SDTA FRS2",
+        )
+        self.assertEqual(
+            curve["Adjustment"]["Heat Flow"]["E Indium"],
+            {"value": 26.1822, "unit": "1/mW"},
+        )
+        self.assertTrue(curve["results"])
+        self.assertEqual(curve["results"][0]["fields"]["Onset"]["value"], 676.61)
+        self.assertEqual(
+            curve["results"][2]["fields"]["Step"]["additional_values"][0],
+            {"value": -2.4981, "unit": "mW"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
