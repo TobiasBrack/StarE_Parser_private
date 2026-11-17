@@ -93,6 +93,40 @@ def parse_sections(lines):
     return sections
 
 
+def parse_section_fields(lines):
+    """Convert curve sections to curve fields and parse Adjustment entries."""
+    sections = parse_sections(lines)
+    adjustment = {}
+    for line in sections.pop("Adjustment", []):
+        if ":" in line:
+            name, value = (part.strip() for part in line.split(":", 1))
+            parsed = (
+                {"text": value}
+                if name.casefold() == "date" and parse_date(value)
+                else parse_value(value)
+            )
+            adjustment[name] = {
+                "value": parsed.get("value", parsed.get("text")),
+                "unit": parsed.get("unit", ""),
+            }
+        elif line.startswith("From "):
+            match = re.fullmatch(r"From\s+(.+?)\s+to\s+(.+?)\s+(\S+)", line)
+            if match:
+                adjustment["From"] = {
+                    "value": f"{match.group(1)} to {match.group(2)}",
+                    "unit": match.group(3),
+                }
+            else:
+                adjustment["details"] = {"value": line, "unit": ""}
+        else:
+            adjustment["details"] = {"value": line, "unit": ""}
+
+    fields = {name: "\n".join(values) for name, values in sections.items()}
+    if adjustment:
+        fields["Adjustment"] = adjustment
+    return fields
+
+
 def parse_block(lines, warnings, curve_no):
     i = 0
     name_lines = []
@@ -127,12 +161,12 @@ def parse_block(lines, warnings, curve_no):
         warnings.append(f"curve {curve_no}: t not monotonic")
 
     tail = lines[i:]
-    sections = parse_sections(tail)
-    sections.pop("Results", None)
+    section_fields = parse_section_fields(tail)
+    section_fields.pop("Results", None)
     start = _find(tail, "Results:")
     results = parse_results(tail[start + 1:_results_end(tail)]) if start >= 0 else []
 
-    return {
+    curve = {
         "name": name,
         "label": label,
         "measured": measured,
@@ -140,8 +174,9 @@ def parse_block(lines, warnings, curve_no):
         "n_rows": len(rows),
         "data": data,
         "results": results,
-        "sections": sections,
     }
+    curve.update(section_fields)
+    return curve
 
 
 def _find(lines, header):
@@ -225,6 +260,17 @@ def write_h5(parsed, out_path):
             for key, values in c["data"].items():
                 ds = g.create_dataset(key, data=np.asarray(values, dtype="f8"), compression="gzip")
                 ds.attrs["unit"] = units.get(key, "")
+            for key, value in c.items():
+                if key in {"name", "label", "measured", "columns", "n_rows", "data", "results"}:
+                    continue
+                if key == "Adjustment":
+                    ag = g.create_group(key)
+                    for name, field in value.items():
+                        eg = ag.create_group(name)
+                        eg.attrs["value"] = field["value"]
+                        eg.attrs["unit"] = field["unit"]
+                else:
+                    g.attrs[key] = value
             rg = g.create_group("results")
             for r, res in enumerate(c["results"], 1):
                 eg = rg.create_group(f"{r:02d}")
@@ -235,9 +281,6 @@ def write_h5(parsed, out_path):
                         eg.attrs[key + " [unit]"] = val["unit"]
                     else:
                         eg.attrs[key] = val["text"]
-            sg = g.create_group("sections")
-            for header, body in c["sections"].items():
-                sg.attrs[header] = "\n".join(body)
 
 
 def main(argv=None):
