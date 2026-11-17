@@ -183,10 +183,10 @@ def _parse_adjustment(lines):
                 adjustment[name] = _adjustment_value(value, name)
             continue
         if text.startswith("From "):
-            match = re.fullmatch(r"From\s+(.+?)\s+to\s+(.+?)\s+(\S+)", text)
+            match = re.fullmatch(r"From\s+(-?[\d.]+(?:[eE][+-]?\d+)?)\s+to\s+(-?[\d.]+(?:[eE][+-]?\d+)?)\s+(\S+)", text)
             if match:
-                adjustment["From"] = {
-                    "value": f"{match.group(1)} to {match.group(2)}",
+                adjustment["range"] = {
+                    "values": [float(match.group(1)), float(match.group(2))],
                     "unit": match.group(3),
                 }
             else:
@@ -327,7 +327,10 @@ def write_h5(parsed, out_path):
 
     def write_adjustment(parent, name, field):
         entry = parent.create_group(name)
-        if "value" in field:
+        if "values" in field:
+            entry.attrs["values"] = field["values"]
+            entry.attrs["unit"] = field["unit"]
+        elif "value" in field:
             entry.attrs["value"] = field["value"]
             entry.attrs["unit"] = field["unit"]
         else:

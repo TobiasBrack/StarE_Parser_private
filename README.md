@@ -57,8 +57,7 @@ Output per curve (JSON):
    no value opens a group; deeper-indented lines belong to it until the
    indent drops. Lines `name : value unit` become fields; indented plain
    text becomes `description`. Numbers are split into value and unit;
-   dates and polynomial formulas (`0.0 + 0.1*T`) are kept as text. `From X to
-   Y unit` is stored as one value with a unit.
+   dates and polynomial formulas (`0.0 + 0.1*T`) are kept as text. `From X to Y unit` (numbers) is stored as `range` with `values: [X, Y]` and `unit`.
 6. **Results**: lines under `Results:` are split into name and value at a
    tab or two or more spaces. Blank lines separate result groups. A line
    without a value is the group description (`type`); an indented

@@ -43,7 +43,7 @@ class ParseBlockTests(unittest.TestCase):
         self.assertEqual(
             curve["Adjustment"],
             {
-                "From": {"value": "-88.67 to 17.00", "unit": "min"},
+                "range": {"values": [-88.67, 17.0], "unit": "min"},
                 "Gas Factor": {"value": 1.0, "unit": ""},
                 "E Indium": {"value": 5.8996e6, "unit": "1/mW"},
                 "date": {"value": "10.08.2026 10:33:55", "unit": ""},
@@ -112,7 +112,7 @@ class ParseBlockTests(unittest.TestCase):
             "  Material: Ceramic",
         ])
         self.assertEqual(fields["Adjustment"], {
-            "From": {"value": "0.00 to 77.58", "unit": "min"},
+            "range": {"values": [0.0, 77.58], "unit": "min"},
             "Sample Temperature": {
                 "description": "TGA/SF SDTA FRS2",
                 "Tc": {"value": 25.0, "unit": "\u00b0C"},
