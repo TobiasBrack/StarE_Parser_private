@@ -387,15 +387,16 @@ def write_h5(parsed, out_path):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("inputs", nargs="+", help="txt files or folders (searched recursively)")
-    ap.add_argument("-o", "--out", default="out", help="output folder")
+    ap.add_argument("-o", "--out", default=None,
+                    help="optional output folder (default: next to each source file)")
     ap.add_argument("-f", "--format", choices=["h5", "json", "both"], default="h5")
     args = ap.parse_args(argv)
 
     files = []
     for p in map(Path, args.inputs):
         files += sorted(p.rglob("*.txt")) if p.is_dir() else [p]
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
+    if args.out:
+        Path(args.out).mkdir(parents=True, exist_ok=True)
 
     failed, curve_count = 0, 0
     for path in files:
@@ -405,15 +406,16 @@ def main(argv=None):
             print(f"FAIL {path}: {exc}", file=sys.stderr)
             failed += 1
             continue
+        target = Path(args.out) if args.out else path.parent
         stem = path.stem
         if args.format in ("h5", "both"):
-            write_h5(parsed, out / f"{stem}.h5")
+            write_h5(parsed, target / f"{stem}.h5")
         if args.format in ("json", "both"):
-            write_json(parsed, out / f"{stem}.json")
+            write_json(parsed, target / f"{stem}.json")
         curve_count += len(parsed["curves"])
         for w in parsed["warnings"]:
             print(f"WARN {path.name}: {w}", file=sys.stderr)
-    print(f"{len(files) - failed}/{len(files)} files parsed, {curve_count} curves -> {out}")
+    print(f"{len(files) - failed}/{len(files)} files parsed, {curve_count} curves")
     return 1 if failed else 0
 
 

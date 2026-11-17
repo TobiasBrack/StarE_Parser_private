@@ -6,14 +6,15 @@ format (JSON, optionally HDF5). Optimized for **STARe SW 21.00** exports.
 ## Usage
 
 ```
-python stare_parser.py <files or folders> [-o OUT] [-f {h5,json,both}]
+python stare_parser.py <files or folders> [-o OUTDIR] [-f {h5,json,both}]
 ```
 
 - `inputs`: one or more `.txt` files, or folders (searched recursively).
-- `-o`, `--out`: output folder (default `out`).
+- `-o`, `--out`: optional output folder. By default each output file is
+  written next to its source file and no folder is created.
 - `-f`, `--format`: `h5` (default, requires `h5py`), `json`, or `both`.
 
-Example: `python stare_parser.py curvefiles -f json -o out`
+Example: `python stare_parser.py curvefiles -f json`
 
 One output file per input file is written, named after the input. No
 `index.json` is created. Failures and warnings are printed to stderr.
