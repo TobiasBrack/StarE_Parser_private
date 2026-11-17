@@ -113,7 +113,8 @@ def parse_block(lines, warnings, curve_no):
     i += 2
 
     rows = []
-    while i < len(lines) and NUMERIC_ROW.match(lines[i]):
+    # Temporary testing cap; remove before the final version.
+    while i < len(lines) and len(rows) < 10 and NUMERIC_ROW.match(lines[i]):
         rows.append(lines[i].split())
         i += 1
     data = {c: [float(r[k]) for r in rows] for k, c in enumerate(columns)}
