@@ -36,11 +36,8 @@ class ParseBlockTests(unittest.TestCase):
         self.assertEqual(
             curve["data"],
             {
-                "columns": [
-                    {"key": "t", "unit": "s"},
-                    {"key": "Signal", "unit": "mW"},
-                ],
-                "values": {"t": [0.0], "Signal": [1.5]},
+                "t": {"values": [0.0], "unit": "s"},
+                "Signal": {"values": [1.5], "unit": "mW"},
             },
         )
         self.assertEqual(
@@ -95,7 +92,10 @@ class ParseBlockTests(unittest.TestCase):
             index = json.loads((output / "index.json").read_text(encoding="utf-8"))
             self.assertIsNone(index[0]["t_range"])
             result = json.loads((output / "curve.json").read_text(encoding="utf-8"))
-            self.assertEqual(result["curves"][0]["data"]["values"]["Abscissa"], [2.0])
+            self.assertEqual(
+                result["curves"][0]["data"]["Abscissa"],
+                {"values": [2.0], "unit": ""},
+            )
 
     def test_indented_adjustment_groups_and_tab_delimited_results(self):
         fields = stare_parser.parse_section_fields([
@@ -165,6 +165,9 @@ class ParseBlockTests(unittest.TestCase):
             curve["Adjustment"]["Heat Flow"]["E Indium"],
             {"value": 26.1822, "unit": "1/mW"},
         )
+        self.assertIn("t", curve["data"])
+        self.assertEqual(curve["data"]["t"]["unit"], "s")
+        self.assertEqual(len(curve["data"]["t"]["values"]), 10)
         self.assertTrue(curve["results"])
         self.assertEqual(curve["results"][0]["fields"]["Onset"]["value"], 676.61)
         self.assertEqual(

@@ -231,6 +231,14 @@ def parse_block(lines, warnings, curve_no):
     t = data.get("t", [])
     if any(b < a for a, b in zip(t, t[1:])):
         warnings.append(f"curve {curve_no}: t not monotonic")
+    column_units = {
+        column: units[k] if k < len(units) else ""
+        for k, column in enumerate(c for c in columns if c != "Index")
+    }
+    data = {
+        key: {"values": values, "unit": column_units.get(key, "")}
+        for key, values in data.items()
+    }
 
     tail = lines[i:]
     section_fields = parse_section_fields(tail)
@@ -243,10 +251,7 @@ def parse_block(lines, warnings, curve_no):
         "label": label,
         "measured": measured,
         "n_rows": len(rows),
-        "data": {
-            "columns": [{"key": c, "unit": units[k] if k < len(units) else ""} for k, c in enumerate(columns[1:])],
-            "values": data,
-        },
+        "data": data,
         "results": results,
     }
     curve.update(section_fields)
@@ -342,10 +347,13 @@ def write_h5(parsed, out_path):
             for key in ("label", "measured"):
                 if c[key]:
                     g.attrs[key] = c[key]
-            units = {col["key"]: col["unit"] for col in c["data"]["columns"]}
-            for key, values in c["data"]["values"].items():
-                ds = g.create_dataset(key, data=np.asarray(values, dtype="f8"), compression="gzip")
-                ds.attrs["unit"] = units.get(key, "")
+            for key, column in c["data"].items():
+                ds = g.create_dataset(
+                    key,
+                    data=np.asarray(column["values"], dtype="f8"),
+                    compression="gzip",
+                )
+                ds.attrs["unit"] = column["unit"]
             for key, value in c.items():
                 if key in {"name", "label", "measured", "n_rows", "data", "results"}:
                     continue
@@ -398,7 +406,7 @@ def main(argv=None):
         if args.format in ("json", "both"):
             write_json(parsed, out / f"{stem}.json")
         for n, c in enumerate(parsed["curves"], 1):
-            time = c["data"]["values"].get("t", [])
+            time = c["data"].get("t", {}).get("values", [])
             manifest.append({
                 "file": str(path), "curve": n, "name": c["name"], "measured": c["measured"],
                 "n_rows": c["n_rows"],

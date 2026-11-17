@@ -1,9 +1,10 @@
 # StarE_Parser
 parse StarE txt output to universal format
 
-Each curve in JSON output has a `data` object containing `columns` (column
-keys and units) and `values` (arrays keyed by column name). The table index
-is used for validation and is not included in the output.
+Each curve in JSON output has a `data` object keyed by column name. Each
+column contains its `values` array and `unit`, for example
+`"t": {"values": [0, 1], "unit": "s"}`. The table index is used for
+validation and is not included in the output.
 Text after a blank line following `Classification` is preserved in the curve's
 `unsectioned` field.
 Adjustment formulas are kept as text values with their units, when present.
