@@ -223,7 +223,11 @@ def parse_block(lines, warnings, curve_no):
     if i >= len(lines) or not name_lines:
         raise ValueError("block without 'Curve Values:' table")
     name, measured = split_name_line(name_lines[0])
-    label = name_lines[1].strip() if len(name_lines) > 1 else None
+    header_lines = [line.strip() for line in name_lines[1:]]
+    performed = None
+    if header_lines and re.match(r"^Performed\b", header_lines[0]):
+        performed = header_lines.pop(0)
+    label = header_lines[0] if header_lines else None
 
     i += 1
     columns = lines[i].split()
@@ -267,6 +271,8 @@ def parse_block(lines, warnings, curve_no):
         "data": data,
         "results": results,
     }
+    if performed is not None:
+        curve["performed"] = performed
     curve.update(section_fields)
     return curve
 

@@ -9,6 +9,22 @@ import parse_directory
 
 
 class ParseBlockTests(unittest.TestCase):
+    def test_performed_header_is_separate_from_label_and_measured(self):
+        for header, performed, label in [
+            (["Performed 01.01.2020", "Heat Flow"], "Performed 01.01.2020", "Heat Flow"),
+            (["Performed 01.01.2020"], "Performed 01.01.2020", None),
+            (["Heat Flow"], None, "Heat Flow"),
+        ]:
+            with self.subTest(header=header):
+                curve = stare_parser.parse_block(
+                    ["Example, 22.06.2026 11:24:55", *header, "Curve Values:",
+                     "Index t Signal", "[s] [mW]", "1 0 1"],
+                    [], 1,
+                )
+                self.assertEqual(curve["measured"], "2026-06-22T11:24:55")
+                self.assertEqual(curve["label"], label)
+                self.assertEqual(curve.get("performed"), performed)
+
     def test_reads_all_rows_and_following_sections(self):
         lines = [
             "Example",

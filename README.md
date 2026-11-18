@@ -38,6 +38,9 @@ Output per curve (JSON):
 
 - Header fields such as `name`, `Sample`, `Material Class`, `Evaluation`
   directly on the curve.
+- An optional `Performed` line after the curve name is retained as `performed`;
+  a following curve type is stored as `label`. The separate `measured` field
+  comes from a date on the curve-name line.
 - `sample_name` and `sample_mass` are extracted from a nonempty `Sample` when
   it ends in a comma followed by a numeric mass and unit, e.g.
   `"sample_name": "H2O (0.0 °C, 334.50 J/g)"` and
