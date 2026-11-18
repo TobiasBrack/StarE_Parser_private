@@ -38,6 +38,12 @@ Output per curve (JSON):
 
 - Header fields such as `name`, `Sample`, `Material Class`, `Evaluation`
   directly on the curve.
+- `sample_name` and `sample_mass` are extracted from a nonempty `Sample` when
+  it ends in a comma followed by a numeric mass and unit, e.g.
+  `"sample_name": "H2O (0.0 °C, 334.50 J/g)"` and
+  `"sample_mass": {"value": 1.3808, "unit": "mg"}`. The original `Sample`
+  is retained. If no mass is recognized, `sample_name` contains the full
+  sample text and `sample_mass` is omitted.
 - `data`: object keyed by column name, each with `values` and `unit`,
   e.g. `"t": {"values": [0, 1], "unit": "s"}`. The table `Index` column is
   only used for validation and is not output.

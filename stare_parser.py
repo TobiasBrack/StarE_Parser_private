@@ -14,6 +14,10 @@ CURVE_START = re.compile(r"^Curve Name:\s*$")
 NUMERIC_ROW = re.compile(r"^\s*-?\d+\s+-?[\d.eE+-]+(\s+-?[\d.eE+-]+)+\s*$")
 SECTION = re.compile(r"^([A-Za-z][A-Za-z ]*):\s*$")
 NUM_UNIT = re.compile(r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(.*)$")
+SAMPLE_MASS = re.compile(
+    r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*"
+    r"(kg|mg|[u\u00b5\u03bc]g|ng|g)$"
+)
 FORMULA = re.compile(
     r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
     r"(?:\s*[+-]\s*\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\s*\*\s*T(?:\^\d+)?)+)"
@@ -126,6 +130,16 @@ def parse_section_fields(lines):
     sections.pop("Adjustment", None)
 
     fields = {name: "\n".join(values) for name, values in sections.items()}
+    sample = fields.get("Sample", "")
+    if sample:
+        name, separator, mass = sample.rpartition(",")
+        match = SAMPLE_MASS.fullmatch(mass.strip()) if separator and name.strip() else None
+        fields["sample_name"] = name.strip() if match else sample
+        if match:
+            fields["sample_mass"] = {
+                "value": float(match.group(1)),
+                "unit": match.group(2),
+            }
     if unsectioned:
         fields["unsectioned"] = "\n".join(unsectioned)
     adjustment = _parse_adjustment(lines)
@@ -359,7 +373,9 @@ def write_h5(parsed, out_path):
             for key, value in c.items():
                 if key in {"name", "label", "measured", "n_rows", "data", "results"}:
                     continue
-                if key == "Adjustment":
+                if key == "sample_mass":
+                    write_adjustment(g, key, value)
+                elif key == "Adjustment":
                     ag = g.create_group(key)
                     for name, field in value.items():
                         write_adjustment(ag, name, field)

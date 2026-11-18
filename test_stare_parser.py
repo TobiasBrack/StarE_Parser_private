@@ -1,4 +1,5 @@
 import json
+import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,6 +49,8 @@ class ParseBlockTests(unittest.TestCase):
         self.assertEqual(
             curve["Sample"], "Bismuth (271.44\u00b0C, 52.16 J/g), 2.7958 mg"
         )
+        self.assertEqual(curve["sample_name"], "Bismuth (271.44\u00b0C, 52.16 J/g)")
+        self.assertEqual(curve["sample_mass"], {"value": 2.7958, "unit": "mg"})
         self.assertEqual(curve["Material Class"], "Metal")
         self.assertNotIn("sections", curve)
         self.assertEqual(
@@ -66,6 +69,45 @@ class ParseBlockTests(unittest.TestCase):
                 "date": {"value": "10.08.2026 10:33:55", "unit": ""},
             },
         )
+
+    def test_sample_mass_variations_and_missing_mass(self):
+        examples = [
+            ("H2O (0.0 \u00b0C, 334.50 J/g), 1.3808 mg",
+             "H2O (0.0 \u00b0C, 334.50 J/g)", {"value": 1.3808, "unit": "mg"}),
+            ("Sample, batch 2, 1.2e-3 \u00b5g",
+             "Sample, batch 2", {"value": 0.0012, "unit": "\u00b5g"}),
+            ("Sample, batch 2", "Sample, batch 2", None),
+            ("Sample, 3 mL", "Sample, 3 mL", None),
+        ]
+        for sample, name, mass in examples:
+            with self.subTest(sample=sample):
+                fields = stare_parser.parse_section_fields(["Sample:", "  " + sample])
+                self.assertEqual(fields["Sample"], sample)
+                self.assertEqual(fields["sample_name"], name)
+                if mass is None:
+                    self.assertNotIn("sample_mass", fields)
+                else:
+                    self.assertEqual(fields["sample_mass"], mass)
+
+    @unittest.skipUnless(importlib.util.find_spec("h5py"), "h5py is not installed")
+    def test_sample_mass_hdf5_output(self):
+        import h5py
+
+        text = (
+            "Curve Name:\nExample\nCurve Values:\n"
+            "Index t Signal\n[s] [mW]\n0 2.0 5.0\n"
+            "Sample:\n  H2O (0.0 \u00b0C, 334.50 J/g), 1.3808 mg\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "curve.txt"
+            path.write_text(text, encoding="utf-8")
+            output = path.with_suffix(".h5")
+            stare_parser.write_h5(stare_parser.parse_file(path), output)
+            with h5py.File(output) as file:
+                curve = file["curve_01"]
+                self.assertEqual(curve.attrs["sample_name"], "H2O (0.0 \u00b0C, 334.50 J/g)")
+                self.assertEqual(curve["sample_mass"].attrs["value"], 1.3808)
+                self.assertEqual(curve["sample_mass"].attrs["unit"], "mg")
 
     def test_formulas_and_text_after_section(self):
         fields = stare_parser.parse_section_fields([
