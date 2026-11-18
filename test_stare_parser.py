@@ -146,13 +146,52 @@ class ParseBlockTests(unittest.TestCase):
         self.assertEqual(fields["unsectioned"], "1/F Plot")
         self.assertEqual(fields["Adjustment"]["dTs(T)"], {
             "value": "0.0000 + 0.0000*T + 0.0000*T^2", "unit": "\u00b0C",
+            "coefficients": [0.0, 0.0, 0.0],
         })
         self.assertEqual(fields["Adjustment"]["Tau Lag"], {
             "value": "3.7425 + 2.6010e-03*T - 268.6718e-09*T^2", "unit": "s",
+            "coefficients": [3.7425, 0.002601, -268.6718e-09],
         })
         self.assertEqual(fields["Adjustment"]["dE relative"], {
             "value": "0.0000 + 0.0000*T + 0.0000*T^2", "unit": "",
+            "coefficients": [0.0, 0.0, 0.0],
         })
+
+    def test_polynomial_coefficients_follow_power_not_term_order(self):
+        fields = stare_parser.parse_section_fields([
+            "Adjustment:",
+            "  polynomial: -1.5 + 2e-3*T^2 - 3*T + 1*T^2",
+        ])
+        self.assertEqual(fields["Adjustment"]["polynomial"], {
+            "value": "-1.5 + 2e-3*T^2 - 3*T + 1*T^2",
+            "unit": "",
+            "coefficients": [-1.5, -3.0, 1.002],
+        })
+        fields = stare_parser.parse_section_fields([
+            "Adjustment:",
+            "  polynomial: 2 - 3*T^2 s",
+        ])
+        self.assertEqual(fields["Adjustment"]["polynomial"]["coefficients"], [2.0, 0.0, -3.0])
+
+    @unittest.skipUnless(importlib.util.find_spec("h5py"), "h5py is not installed")
+    def test_polynomial_coefficients_are_written_to_hdf5(self):
+        import h5py
+
+        text = (
+            "Curve Name:\nExample\nCurve Values:\n"
+            "Index t Signal\n[s] [mW]\n0 2.0 5.0\n"
+            "Adjustment:\n  Tau Lag: 3.7425 + 2.6010e-03*T - 268.6718e-09*T^2 s\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "curve.txt"
+            path.write_text(text, encoding="utf-8")
+            output = path.with_suffix(".h5")
+            stare_parser.write_h5(stare_parser.parse_file(path), output)
+            with h5py.File(output) as file:
+                entry = file["curve_01/Adjustment/Tau Lag"]
+                self.assertEqual(entry.attrs["value"], "3.7425 + 2.6010e-03*T - 268.6718e-09*T^2")
+                self.assertEqual(entry.attrs["unit"], "s")
+                self.assertEqual(list(entry.attrs["coefficients"]), [3.7425, 0.002601, -268.6718e-09])
 
     def test_json_output_supports_curves_without_time(self):
         text = (
@@ -194,6 +233,7 @@ class ParseBlockTests(unittest.TestCase):
                 "dTs(T)": {
                     "value": "0.0000 + 0.0000*T + 0.0000*T^2",
                     "unit": "\u00b0C",
+                    "coefficients": [0.0, 0.0, 0.0],
                 },
             },
             "Heat Flow": {
@@ -201,6 +241,7 @@ class ParseBlockTests(unittest.TestCase):
                 "dE relative": {
                     "value": "0.0000 + 0.0000*T + 0.0000*T^2",
                     "unit": "",
+                    "coefficients": [0.0, 0.0, 0.0],
                 },
                 "date": {"value": "-", "unit": ""},
             },

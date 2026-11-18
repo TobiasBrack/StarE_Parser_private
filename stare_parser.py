@@ -23,6 +23,9 @@ FORMULA = re.compile(
     r"(?:\s*[+-]\s*\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\s*\*\s*T(?:\^\d+)?)+)"
     r"(?:\s+(\S+))?$"
 )
+FORMULA_TERM = re.compile(
+    r"([+-])\s*(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*\*\s*T(?:\^(\d+))?"
+)
 FOOTER = re.compile(r"^(Not signed|Signed)\b(.*)$")
 RULE = re.compile(r"^_{10,}$")
 
@@ -151,7 +154,19 @@ def parse_section_fields(lines):
 def _adjustment_value(text, name):
     formula = FORMULA.fullmatch(text)
     if formula:
-        return {"value": formula.group(1), "unit": formula.group(2) or ""}
+        expression = formula.group(1)
+        constant = NUM_UNIT.match(expression).group(1)
+        coefficients = [float(constant)]
+        for term in FORMULA_TERM.finditer(expression[len(constant):]):
+            degree = int(term.group(3) or 1)
+            coefficients.extend([0.0] * (degree + 1 - len(coefficients)))
+            coefficient = float(term.group(2))
+            coefficients[degree] += -coefficient if term.group(1) == "-" else coefficient
+        return {
+            "value": expression,
+            "unit": formula.group(2) or "",
+            "coefficients": coefficients,
+        }
     parsed = (
         {"text": text}
         if name.casefold() == "date" and parse_date(text)
@@ -350,6 +365,8 @@ def write_h5(parsed, out_path):
         elif "value" in field:
             entry.attrs["value"] = field["value"]
             entry.attrs["unit"] = field["unit"]
+            if "coefficients" in field:
+                entry.attrs["coefficients"] = field["coefficients"]
         else:
             for subname, subfield in field.items():
                 if isinstance(subfield, dict):

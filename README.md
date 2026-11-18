@@ -52,7 +52,9 @@ Output per curve (JSON):
   only used for validation and is not output.
 - `Adjustment`: nested object of `name -> {value, unit}`, with groups
   (e.g. `Sample Temperature`, `Heat Flow`) as sub-objects and plain text
-  stored as `description`.
+  stored as `description`. Recognized polynomial formulas also include
+  `coefficients` in ascending power order (constant, `T`, `T^2`, ...);
+  missing powers are zero.
 - `results`: list of result groups, each with a `type` and `fields`
   (`name -> value/unit`).
 - `unsectioned`: text after a blank line following `Classification`.
