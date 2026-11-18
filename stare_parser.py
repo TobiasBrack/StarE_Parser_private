@@ -14,10 +14,17 @@ CURVE_START = re.compile(r"^Curve Name:\s*$")
 NUMERIC_ROW = re.compile(r"^\s*-?\d+\s+-?[\d.eE+-]+(\s+-?[\d.eE+-]+)+\s*$")
 SECTION = re.compile(r"^([A-Za-z][A-Za-z ]*):\s*$")
 NUM_UNIT = re.compile(r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(.*)$")
+SAMPLE_MASS = re.compile(
+    r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*"
+    r"(kg|mg|[u\u00b5\u03bc]g|ng|g)$"
+)
 FORMULA = re.compile(
     r"^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
     r"(?:\s*[+-]\s*\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\s*\*\s*T(?:\^\d+)?)+)"
     r"(?:\s+(\S+))?$"
+)
+FORMULA_TERM = re.compile(
+    r"([+-])\s*(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*\*\s*T(?:\^(\d+))?"
 )
 FOOTER = re.compile(r"^(Not signed|Signed)\b(.*)$")
 RULE = re.compile(r"^_{10,}$")
@@ -125,7 +132,24 @@ def parse_section_fields(lines):
     sections, unsectioned = parse_sections(lines)
     sections.pop("Adjustment", None)
 
-    fields = {name: "\n".join(values) for name, values in sections.items()}
+    fields = {
+        name: _parse_section_value(values)
+        for name, values in sections.items()
+    }
+    if isinstance(fields.get("Sample"), str):
+        text = fields["Sample"]
+        name, separator, mass = text.rpartition(",")
+        match = SAMPLE_MASS.fullmatch(mass.strip()) if separator and name.strip() else None
+        sample = {
+            "text": text,
+            "name": name.strip() if match else text,
+        }
+        if match:
+            sample["mass"] = {
+                "value": float(match.group(1)),
+                "unit": match.group(2),
+            }
+        fields["Sample"] = sample
     if unsectioned:
         fields["unsectioned"] = "\n".join(unsectioned)
     adjustment = _parse_adjustment(lines)
@@ -134,10 +158,45 @@ def parse_section_fields(lines):
     return fields
 
 
+def _parse_section_value(lines):
+    """Parse labeled sections with named values; leave other text unchanged."""
+    if not lines:
+        return ""
+
+    label = lines[0]
+    fields = {}
+    for line in lines[1:]:
+        match = re.fullmatch(r"([^:]+):\s*(.*)", line)
+        if not match:
+            return "\n".join(lines)
+        name, value = (part.strip() for part in match.groups())
+        parsed = parse_value(value)
+        fields[name] = {
+            "value": parsed.get("value", parsed.get("text")),
+            "unit": parsed.get("unit", ""),
+        }
+
+    if not fields:
+        return "\n".join(lines)
+    return {"label": label, **fields}
+
+
 def _adjustment_value(text, name):
     formula = FORMULA.fullmatch(text)
     if formula:
-        return {"value": formula.group(1), "unit": formula.group(2) or ""}
+        expression = formula.group(1)
+        constant = NUM_UNIT.match(expression).group(1)
+        coefficients = [float(constant)]
+        for term in FORMULA_TERM.finditer(expression[len(constant):]):
+            degree = int(term.group(3) or 1)
+            coefficients.extend([0.0] * (degree + 1 - len(coefficients)))
+            coefficient = float(term.group(2))
+            coefficients[degree] += -coefficient if term.group(1) == "-" else coefficient
+        return {
+            "value": expression,
+            "unit": formula.group(2) or "",
+            "coefficients": coefficients,
+        }
     parsed = (
         {"text": text}
         if name.casefold() == "date" and parse_date(text)
@@ -209,7 +268,18 @@ def parse_block(lines, warnings, curve_no):
     if i >= len(lines) or not name_lines:
         raise ValueError("block without 'Curve Values:' table")
     name, measured = split_name_line(name_lines[0])
-    label = name_lines[1].strip() if len(name_lines) > 1 else None
+    header_lines = [line.strip() for line in name_lines[1:]]
+    performed = None
+    remaining_header_lines = []
+    for line in header_lines:
+        match = re.match(r"^Performed\s*:?\s*(.+)$", line, re.IGNORECASE)
+        if match:
+            performed = parse_date(match.group(1))
+            if performed is None:
+                warnings.append(f"curve {curve_no}: invalid Performed datetime")
+        else:
+            remaining_header_lines.append(line)
+    label = remaining_header_lines[0] if remaining_header_lines else None
 
     i += 1
     columns = lines[i].split()
@@ -253,6 +323,8 @@ def parse_block(lines, warnings, curve_no):
         "data": data,
         "results": results,
     }
+    if performed:
+        curve["performed"] = performed
     curve.update(section_fields)
     return curve
 
@@ -323,6 +395,9 @@ def write_h5(parsed, out_path):
     import numpy as np
 
     def write_adjustment(parent, name, field):
+        if not isinstance(field, dict):
+            parent.attrs[name] = field
+            return
         entry = parent.create_group(name)
         if "values" in field:
             entry.attrs["values"] = field["values"]
@@ -330,6 +405,8 @@ def write_h5(parsed, out_path):
         elif "value" in field:
             entry.attrs["value"] = field["value"]
             entry.attrs["unit"] = field["unit"]
+            if "coefficients" in field:
+                entry.attrs["coefficients"] = field["coefficients"]
         else:
             for subname, subfield in field.items():
                 if isinstance(subfield, dict):
@@ -346,8 +423,8 @@ def write_h5(parsed, out_path):
         for n, c in enumerate(parsed["curves"], 1):
             g = f.create_group(f"curve_{n:02d}")
             g.attrs["name"] = c["name"]
-            for key in ("label", "measured"):
-                if c[key]:
+            for key in ("label", "measured", "performed"):
+                if c.get(key):
                     g.attrs[key] = c[key]
             for key, column in c["data"].items():
                 ds = g.create_dataset(
@@ -357,12 +434,16 @@ def write_h5(parsed, out_path):
                 )
                 ds.attrs["unit"] = column["unit"]
             for key, value in c.items():
-                if key in {"name", "label", "measured", "n_rows", "data", "results"}:
+                if key in {
+                    "name", "label", "measured", "performed", "n_rows", "data", "results"
+                }:
                     continue
                 if key == "Adjustment":
                     ag = g.create_group(key)
                     for name, field in value.items():
                         write_adjustment(ag, name, field)
+                elif isinstance(value, dict):
+                    write_adjustment(g, key, value)
                 else:
                     g.attrs[key] = value
             rg = g.create_group("results")

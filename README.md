@@ -20,6 +20,15 @@ One output file per input file is written, named after the input. No
 `index.json` is created. Failures and warnings are printed to stderr.
 Tests: `python -m unittest`.
 
+### Batch JSON script
+
+Run `python parse_directory.py path/to/directory` to recursively parse `.txt`
+files using the imported `stare_parser` module. Each JSON file is written next
+to its source; existing JSON files with the same name are overwritten. Errors
+are reported and processing continues with the remaining files. The script
+exits with a nonzero status if a file fails or no `.txt` files are found.
+JSON output needs only the Python standard library.
+
 ## What it does
 
 An export may contain several curves. For each curve the parser extracts
@@ -29,12 +38,29 @@ Output per curve (JSON):
 
 - Header fields such as `name`, `Sample`, `Material Class`, `Evaluation`
   directly on the curve.
+- An optional `Performed` line after the curve name is parsed as an ISO
+  datetime in `performed`; its label text is not retained. A following curve
+  type is stored as `label`. The separate `measured` field comes from a date
+  on the curve-name line.
+- `Sample` is an object containing the original `text`, extracted `name`, and
+  optional `mass`. For example,
+  `"Sample": {"text": "H2O (0.0 °C, 334.50 J/g), 1.3808 mg",
+  "name": "H2O (0.0 °C, 334.50 J/g)",
+  "mass": {"value": 1.3808, "unit": "mg"}}`.
+  If no mass is recognized, `Sample.name` contains the full sample text and
+  `Sample.mass` is omitted.
+- Labeled sections such as `Sample Holder` and `TA Module`, with a label
+  followed by `name: value` entries, are objects containing `label` and named
+  values. Numeric values are split into `value` and `unit`; ordinary text
+  sections remain strings.
 - `data`: object keyed by column name, each with `values` and `unit`,
   e.g. `"t": {"values": [0, 1], "unit": "s"}`. The table `Index` column is
   only used for validation and is not output.
 - `Adjustment`: nested object of `name -> {value, unit}`, with groups
   (e.g. `Sample Temperature`, `Heat Flow`) as sub-objects and plain text
-  stored as `description`.
+  stored as `description`. Recognized polynomial formulas also include
+  `coefficients` in ascending power order (constant, `T`, `T^2`, ...);
+  missing powers are zero.
 - `results`: list of result groups, each with a `type` and `fields`
   (`name -> value/unit`).
 - `unsectioned`: text after a blank line following `Classification`.

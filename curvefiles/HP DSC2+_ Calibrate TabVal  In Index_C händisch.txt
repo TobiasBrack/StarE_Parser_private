@@ -1,0 +1,99 @@
+Title                                                           18.11.2026 09:58
+________________________________________________________________________________
+
+Title
+Evaluation Categories:
+
+Curve Name:
+  HP DSC2+: Calibrate TabVal  In Index_C, 28.10.2025 10:54:16
+  Performed 28.10.2025 10:54:16
+Curve Values:
+          Index              t             Ts             Tr          Value
+                           [s]           [°C]           [°C]           [mW]
+              0              0        119.999        120.000     -0.0344351
+             37             37        126.167        126.167     0.00317432
+             74             74        132.333        132.333     0.00187877
+            111            111        138.500        138.500    -0.00623285
+            148            148        144.666        144.667     -0.0180023
+            185            185        150.832        150.833     -0.0247014
+            222            222        156.999        157.000      -0.028162
+            259            259        163.174        163.167       0.157117
+            296            296        169.331        169.333     -0.0450441
+            333            333        175.497        175.500     -0.0567784
+
+
+Results:
+  ? Integral    -178.05 mJ
+    normalized  -28.38 Jg^-1
+  Onset         159.58 °C
+  Left Limit    156.22 °C
+  Right Limit   166.21 °C
+  Heating Rate  10.00 °Cmin^-1
+
+Texts:
+
+  HP DSC2+: Calibrate TabVal  In Index_C, 28.10.2025 10:54:16
+  In (156.6 °C, 28.70 J/g), 6.2740 mg
+
+
+  Adjustment: Main Sensor CERAMIC:FRS6, FRS6+ HIGH
+  Cell Temperature: Pt100
+    R(T)   : 100.9998 + 0.3919*T - 58.0200e-06*T^2 Ohm
+      date : 28.10.2025 10:28:33
+  Sample Holder: Aluminum Standard 40ul
+    Factor 1
+    Tau Lag Factor 1
+  Gas Air,  Factor 1
+    Tau Lag: 6.5271 + 5.1835e-03*T + 0.0000*T^2 s
+      date :  28.10.2025 10:28:33
+    E Indium    : 24.1441e+03 1/mW
+    dE relative : 0.0000 + 0.0000*T + 0.0000*T^2
+      date :  28.10.2025 10:28:33
+
+
+Sample:
+  In (156.6 °C, 28.70 J/g), 6.2740 mg
+Sample Remarks:
+  
+Material Class:
+  -
+Experiment Comments:
+  -
+Curve Categories:
+Evaluation:
+  HP DSC2+: Calibrate TabVal  In Index_C händisch, 28.10.2025 11:39:44
+Method:
+  HP DSC2+: Calibrate TabVal  In Index_C
+Adjustment:
+  From 0.00 to 6.00 min
+  Gas Factor    : 1
+  E Indium      : 24.1441e+03 1/mW
+  dE relative   : 0.0000 + 0.0000*T + 0.0000*T^2
+    date        : 28.10.2025 10:28:33
+Pt100
+R(T)   : 100.9998 + 0.3919*T - 58.0200e-06*T^2 Ohm
+  date : 28.10.2025 10:28:33
+Sample Holder:
+  Aluminum Standard 40ul
+  Weight  : 48.954 mg
+  Material: Aluminum
+
+Order Number:
+  
+Customer:
+  
+User:
+  tm
+TA Module:
+  HP DSC 5+ Proto1, 01.10.2025 09:47:34
+  Type           : HP DSC 2+
+  Identification : 1
+Serial Number  : 123456
+SW Version     : 2.00 TXX (20260130)
+  Main Sensor: CERAMIC:FRS6, FRS6+ HIGH
+Classification:
+  Not classified
+
+
+________________________________________________________________________________
+Not signed                                                        STARe SW 21.00
