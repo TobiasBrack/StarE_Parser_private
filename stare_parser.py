@@ -125,13 +125,39 @@ def parse_section_fields(lines):
     sections, unsectioned = parse_sections(lines)
     sections.pop("Adjustment", None)
 
-    fields = {name: "\n".join(values) for name, values in sections.items()}
+    fields = {
+        name: _parse_section_value(values)
+        for name, values in sections.items()
+    }
     if unsectioned:
         fields["unsectioned"] = "\n".join(unsectioned)
     adjustment = _parse_adjustment(lines)
     if adjustment:
         fields["Adjustment"] = adjustment
     return fields
+
+
+def _parse_section_value(lines):
+    """Parse labeled sections with named values; leave other text unchanged."""
+    if not lines:
+        return ""
+
+    label = lines[0]
+    fields = {}
+    for line in lines[1:]:
+        match = re.fullmatch(r"([^:]+):\s*(.*)", line)
+        if not match:
+            return "\n".join(lines)
+        name, value = (part.strip() for part in match.groups())
+        parsed = parse_value(value)
+        fields[name] = {
+            "value": parsed.get("value", parsed.get("text")),
+            "unit": parsed.get("unit", ""),
+        }
+
+    if not fields:
+        return "\n".join(lines)
+    return {"label": label, **fields}
 
 
 def _adjustment_value(text, name):
@@ -209,7 +235,17 @@ def parse_block(lines, warnings, curve_no):
     if i >= len(lines) or not name_lines:
         raise ValueError("block without 'Curve Values:' table")
     name, measured = split_name_line(name_lines[0])
-    label = name_lines[1].strip() if len(name_lines) > 1 else None
+    performed = None
+    remaining_name_lines = []
+    for line in name_lines[1:]:
+        match = re.match(r"^Performed\s*:?\s*(.+)$", line.strip(), re.IGNORECASE)
+        if match:
+            performed = parse_date(match.group(1))
+            if performed is None:
+                warnings.append(f"curve {curve_no}: invalid Performed datetime")
+        else:
+            remaining_name_lines.append(line)
+    label = remaining_name_lines[0].strip() if remaining_name_lines else None
 
     i += 1
     columns = lines[i].split()
@@ -249,6 +285,7 @@ def parse_block(lines, warnings, curve_no):
         "name": name,
         "label": label,
         "measured": measured,
+        "performed": performed,
         "n_rows": len(rows),
         "data": data,
         "results": results,
@@ -323,6 +360,9 @@ def write_h5(parsed, out_path):
     import numpy as np
 
     def write_adjustment(parent, name, field):
+        if not isinstance(field, dict):
+            parent.attrs[name] = field
+            return
         entry = parent.create_group(name)
         if "values" in field:
             entry.attrs["values"] = field["values"]
@@ -346,7 +386,7 @@ def write_h5(parsed, out_path):
         for n, c in enumerate(parsed["curves"], 1):
             g = f.create_group(f"curve_{n:02d}")
             g.attrs["name"] = c["name"]
-            for key in ("label", "measured"):
+            for key in ("label", "measured", "performed"):
                 if c[key]:
                     g.attrs[key] = c[key]
             for key, column in c["data"].items():
@@ -357,12 +397,18 @@ def write_h5(parsed, out_path):
                 )
                 ds.attrs["unit"] = column["unit"]
             for key, value in c.items():
-                if key in {"name", "label", "measured", "n_rows", "data", "results"}:
+                if key in {
+                    "name", "label", "measured", "performed", "n_rows", "data", "results"
+                }:
                     continue
                 if key == "Adjustment":
                     ag = g.create_group(key)
                     for name, field in value.items():
                         write_adjustment(ag, name, field)
+                elif isinstance(value, dict):
+                    section = g.create_group(key)
+                    for name, field in value.items():
+                        write_adjustment(section, name, field)
                 else:
                     g.attrs[key] = value
             rg = g.create_group("results")

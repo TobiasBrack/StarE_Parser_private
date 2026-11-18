@@ -29,6 +29,12 @@ Output per curve (JSON):
 
 - Header fields such as `name`, `Sample`, `Material Class`, `Evaluation`
   directly on the curve.
+- Labeled sections containing a label followed by `name: value` entries
+  (such as `Sample Holder` and `TA Module`) are objects with a `label` and
+  named values. Numeric values are split into `value` and `unit`; ordinary
+  text sections remain strings.
+- A `Performed` line is parsed as an ISO datetime in the `performed` field,
+  separate from the curve label.
 - `data`: object keyed by column name, each with `values` and `unit`,
   e.g. `"t": {"values": [0, 1], "unit": "s"}`. The table `Index` column is
   only used for validation and is not output.

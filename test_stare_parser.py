@@ -66,6 +66,45 @@ class ParseBlockTests(unittest.TestCase):
             },
         )
 
+    def test_labeled_sections_parse_named_values(self):
+        fields = stare_parser.parse_section_fields([
+            "Sample Holder:",
+            "  Aluminum Standard 40ul",
+            "  Weight  : 49.53 mg",
+            "  Material: Aluminum",
+            "TA Module:",
+            "  Flash DSC 2+",
+            "  Type           : Flash DSC 2+",
+            "  Identification : 103",
+            "Method:",
+            "  Simple text value",
+        ])
+
+        self.assertEqual(fields["Sample Holder"], {
+            "label": "Aluminum Standard 40ul",
+            "Weight": {"value": 49.53, "unit": "mg"},
+            "Material": {"value": "Aluminum", "unit": ""},
+        })
+        self.assertEqual(fields["TA Module"], {
+            "label": "Flash DSC 2+",
+            "Type": {"value": "Flash DSC 2+", "unit": ""},
+            "Identification": {"value": 103.0, "unit": ""},
+        })
+        self.assertEqual(fields["Method"], "Simple text value")
+
+    def test_performed_datetime_is_parsed_separately_from_curve_label(self):
+        curve = stare_parser.parse_block([
+            "Example",
+            "Performed: 22.06.2026 12:42:01",
+            "Curve Values:",
+            "Index t Signal",
+            "[s] [mW]",
+            "1 0 1.5",
+        ], [], 1)
+
+        self.assertEqual(curve["performed"], "2026-06-22T12:42:01")
+        self.assertIsNone(curve["label"])
+
     def test_formulas_and_text_after_section(self):
         fields = stare_parser.parse_section_fields([
             "Texts:",
