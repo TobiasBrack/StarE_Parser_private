@@ -1,0 +1,100 @@
+Title                                                           18.11.2026 09:39
+________________________________________________________________________________
+
+Title
+Evaluation Categories:
+
+Curve Name:
+  HP DSC2+: Drift + Artifacts  50...500    Index_C neue Tiegel r2, 15.01.2026 12:41:22
+  Performed 15.01.2026 12:41:22
+Curve Values:
+          Index              t             Ts             Tr          Value
+                           [s]           [°C]           [°C]           [mW]
+              0              0         50.000         50.000   -0.000889793
+            178            178         69.332         69.333     -0.0465876
+            356            356        128.666        128.667     -0.0138958
+            534            534        188.002        188.000       0.045106
+            712            712        247.341        247.333       0.134799
+            890            890        306.681        306.667       0.230145
+           1068           1068        366.028        366.000       0.417572
+           1246           1246        425.376        425.333       0.601559
+           1424           1424        484.738        484.667        0.95887
+           1602           1602        500.051        500.000       0.680747
+
+
+Results:
+  ? Signal Value        592.03e-06 mW
+            at          50.00 °C
+
+  ? Step                -1.13 mW
+  Left Limit            59.68 °C
+  Right Limit           497.75 °C
+  Delta Ordinate        1.13 mW
+
+  ? Step                0.08 mW
+  Left Limit            447.39 °C
+  Right Limit           450.74 °C
+  Delta Ordinate        0.08 mW
+
+  ? Step                -0.02 mW
+  Left Limit            204.93 °C
+  Right Limit           206.41 °C
+  Delta Ordinate        0.02 mW
+
+  ? Step                0.06 mW
+  Left Limit            477.07 °C
+  Right Limit           478.06 °C
+  Delta Ordinate        0.06 mW
+
+Texts:
+
+  HP DSC2+: Drift + Artifacts  50...500    Index_C neue Tiegel r2, 15.01.2026 12:41:22
+  HP DSC2+: Drift + Artifacts  50...500    Index_C neue Tiegel r2, 0.0000 mg
+
+
+Sample:
+  HP DSC2+: Drift + Artifacts  50...500    Index_C neue Tiegel r2, 0.0000 mg
+Sample Remarks:
+  
+Material Class:
+  -
+Experiment Comments:
+  -
+Curve Categories:
+Evaluation:
+  HP DSC2+: Drift + Artifacts  50...500    Index_C neue Tiegel r2, 15.01.2026 13:42:35
+Method:
+  HP DSC2+: Drift + Artifacts  50...500    Index_C
+Adjustment:
+  From 0.00 to 29.50 min
+  Gas Factor    : 1
+  E Indium      : 24.7006e+03 1/mW
+  dE relative   : 0.0000 + 0.0000*T + 0.0000*T^2
+    date        : 14.01.2026 16:59:09
+Pt100
+R(T)   : 99.9471 + 0.3928*T - 58.0200e-06*T^2 Ohm
+  date : 14.01.2026 16:59:09
+Sample Holder:
+  Aluminum Standard 40ul
+  Weight  : 49.53 mg
+  Material: Aluminum
+
+Order Number:
+  
+Customer:
+  
+User:
+  tm
+TA Module:
+  HP DSC 5+ Proto1_2, 08.01.2026 17:18:18
+  Type           : HP DSC 2+
+  Identification : 1
+Serial Number  : 123456
+SW Version     : 2.00 TXX (20260130)
+  Main Sensor: CERAMIC:FRS6, FRS6+ HIGH
+Classification:
+  Not classified
+
+
+________________________________________________________________________________
+Not signed                                                        STARe SW 21.00
