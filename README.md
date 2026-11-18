@@ -38,9 +38,10 @@ Output per curve (JSON):
 
 - Header fields such as `name`, `Sample`, `Material Class`, `Evaluation`
   directly on the curve.
-- An optional `Performed` line after the curve name is retained as `performed`;
-  a following curve type is stored as `label`. The separate `measured` field
-  comes from a date on the curve-name line.
+- An optional `Performed` line after the curve name is parsed as an ISO
+  datetime in `performed`; its label text is not retained. A following curve
+  type is stored as `label`. The separate `measured` field comes from a date
+  on the curve-name line.
 - `Sample` is an object containing the original `text`, extracted `name`, and
   optional `mass`. For example,
   `"Sample": {"text": "H2O (0.0 °C, 334.50 J/g), 1.3808 mg",
@@ -48,6 +49,10 @@ Output per curve (JSON):
   "mass": {"value": 1.3808, "unit": "mg"}}`.
   If no mass is recognized, `Sample.name` contains the full sample text and
   `Sample.mass` is omitted.
+- Labeled sections such as `Sample Holder` and `TA Module`, with a label
+  followed by `name: value` entries, are objects containing `label` and named
+  values. Numeric values are split into `value` and `unit`; ordinary text
+  sections remain strings.
 - `data`: object keyed by column name, each with `values` and `unit`,
   e.g. `"t": {"values": [0, 1], "unit": "s"}`. The table `Index` column is
   only used for validation and is not output.
