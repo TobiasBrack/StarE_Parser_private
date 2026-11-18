@@ -11,8 +11,10 @@ import parse_directory
 class ParseBlockTests(unittest.TestCase):
     def test_performed_header_is_separate_from_label_and_measured(self):
         for header, performed, label in [
-            (["Performed 01.01.2020", "Heat Flow"], "Performed 01.01.2020", "Heat Flow"),
-            (["Performed 01.01.2020"], "Performed 01.01.2020", None),
+            (["Performed 01.01.2020 10:11:12", "Heat Flow"],
+             "2020-01-01T10:11:12", "Heat Flow"),
+            (["Performed: 01.01.2020 10:11:12"],
+             "2020-01-01T10:11:12", None),
             (["Heat Flow"], None, "Heat Flow"),
         ]:
             with self.subTest(header=header):
@@ -108,14 +110,44 @@ class ParseBlockTests(unittest.TestCase):
                 else:
                     self.assertEqual(fields["Sample"]["mass"], mass)
 
+    def test_sample_holder_and_ta_module_sections_are_structured(self):
+        fields = stare_parser.parse_section_fields([
+            "Sample Holder:",
+            "  Aluminum Standard 40ul",
+            "  Weight  : 49.53 mg",
+            "  Material: Aluminum",
+            "TA Module:",
+            "  Flash DSC 2+",
+            "  Type           : Flash DSC 2+",
+            "  Identification : 103",
+            "Method:",
+            "  Simple text value",
+        ])
+
+        self.assertEqual(fields["Sample Holder"], {
+            "label": "Aluminum Standard 40ul",
+            "Weight": {"value": 49.53, "unit": "mg"},
+            "Material": {"value": "Aluminum", "unit": ""},
+        })
+        self.assertEqual(fields["TA Module"], {
+            "label": "Flash DSC 2+",
+            "Type": {"value": "Flash DSC 2+", "unit": ""},
+            "Identification": {"value": 103.0, "unit": ""},
+        })
+        self.assertEqual(fields["Method"], "Simple text value")
+
     @unittest.skipUnless(importlib.util.find_spec("h5py"), "h5py is not installed")
-    def test_sample_mass_hdf5_output(self):
+    def test_sample_and_labeled_metadata_hdf5_output(self):
         import h5py
 
         text = (
             "Curve Name:\nExample\nCurve Values:\n"
             "Index t Signal\n[s] [mW]\n0 2.0 5.0\n"
             "Sample:\n  H2O (0.0 \u00b0C, 334.50 J/g), 1.3808 mg\n"
+            "Sample Holder:\n"
+            "  Aluminum Standard 40ul\n"
+            "  Weight: 49.53 mg\n"
+            "  Material: Aluminum\n"
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "curve.txt"
@@ -129,6 +161,11 @@ class ParseBlockTests(unittest.TestCase):
                 self.assertEqual(sample.attrs["name"], "H2O (0.0 °C, 334.50 J/g)")
                 self.assertEqual(sample["mass"].attrs["value"], 1.3808)
                 self.assertEqual(sample["mass"].attrs["unit"], "mg")
+                holder = curve["Sample Holder"]
+                self.assertEqual(holder.attrs["label"], "Aluminum Standard 40ul")
+                self.assertEqual(holder["Weight"].attrs["value"], 49.53)
+                self.assertEqual(holder["Weight"].attrs["unit"], "mg")
+                self.assertEqual(holder["Material"].attrs["value"], "Aluminum")
 
     def test_formulas_and_text_after_section(self):
         fields = stare_parser.parse_section_fields([
