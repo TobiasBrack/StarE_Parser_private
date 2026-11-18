@@ -41,12 +41,13 @@ Output per curve (JSON):
 - An optional `Performed` line after the curve name is retained as `performed`;
   a following curve type is stored as `label`. The separate `measured` field
   comes from a date on the curve-name line.
-- `sample_name` and `sample_mass` are extracted from a nonempty `Sample` when
-  it ends in a comma followed by a numeric mass and unit, e.g.
-  `"sample_name": "H2O (0.0 °C, 334.50 J/g)"` and
-  `"sample_mass": {"value": 1.3808, "unit": "mg"}`. The original `Sample`
-  is retained. If no mass is recognized, `sample_name` contains the full
-  sample text and `sample_mass` is omitted.
+- `Sample` is an object containing the original `text`, extracted `name`, and
+  optional `mass`. For example,
+  `"Sample": {"text": "H2O (0.0 °C, 334.50 J/g), 1.3808 mg",
+  "name": "H2O (0.0 °C, 334.50 J/g)",
+  "mass": {"value": 1.3808, "unit": "mg"}}`.
+  If no mass is recognized, `Sample.name` contains the full sample text and
+  `Sample.mass` is omitted.
 - `data`: object keyed by column name, each with `values` and `unit`,
   e.g. `"t": {"values": [0, 1], "unit": "s"}`. The table `Index` column is
   only used for validation and is not output.

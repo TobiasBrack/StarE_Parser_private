@@ -39,7 +39,10 @@ class ParseBlockTests(unittest.TestCase):
         self.assertEqual(curve["n_rows"], 15)
         self.assertEqual(curve["data"]["t"]["values"], list(range(1, 16)))
         self.assertEqual(curve["data"]["Signal"]["values"], list(range(2, 31, 2)))
-        self.assertEqual(curve["Sample"], "Example sample")
+        self.assertEqual(curve["Sample"], {
+            "text": "Example sample",
+            "name": "Example sample",
+        })
 
     def test_sections_are_curve_fields_and_adjustment_values_are_structured(self):
         lines = [
@@ -62,11 +65,11 @@ class ParseBlockTests(unittest.TestCase):
 
         curve = stare_parser.parse_block(lines, [], 1)
 
-        self.assertEqual(
-            curve["Sample"], "Bismuth (271.44\u00b0C, 52.16 J/g), 2.7958 mg"
-        )
-        self.assertEqual(curve["sample_name"], "Bismuth (271.44\u00b0C, 52.16 J/g)")
-        self.assertEqual(curve["sample_mass"], {"value": 2.7958, "unit": "mg"})
+        self.assertEqual(curve["Sample"], {
+            "text": "Bismuth (271.44\u00b0C, 52.16 J/g), 2.7958 mg",
+            "name": "Bismuth (271.44\u00b0C, 52.16 J/g)",
+            "mass": {"value": 2.7958, "unit": "mg"},
+        })
         self.assertEqual(curve["Material Class"], "Metal")
         self.assertNotIn("sections", curve)
         self.assertEqual(
@@ -98,12 +101,12 @@ class ParseBlockTests(unittest.TestCase):
         for sample, name, mass in examples:
             with self.subTest(sample=sample):
                 fields = stare_parser.parse_section_fields(["Sample:", "  " + sample])
-                self.assertEqual(fields["Sample"], sample)
-                self.assertEqual(fields["sample_name"], name)
+                self.assertEqual(fields["Sample"]["text"], sample)
+                self.assertEqual(fields["Sample"]["name"], name)
                 if mass is None:
-                    self.assertNotIn("sample_mass", fields)
+                    self.assertNotIn("mass", fields["Sample"])
                 else:
-                    self.assertEqual(fields["sample_mass"], mass)
+                    self.assertEqual(fields["Sample"]["mass"], mass)
 
     @unittest.skipUnless(importlib.util.find_spec("h5py"), "h5py is not installed")
     def test_sample_mass_hdf5_output(self):
@@ -121,9 +124,11 @@ class ParseBlockTests(unittest.TestCase):
             stare_parser.write_h5(stare_parser.parse_file(path), output)
             with h5py.File(output) as file:
                 curve = file["curve_01"]
-                self.assertEqual(curve.attrs["sample_name"], "H2O (0.0 \u00b0C, 334.50 J/g)")
-                self.assertEqual(curve["sample_mass"].attrs["value"], 1.3808)
-                self.assertEqual(curve["sample_mass"].attrs["unit"], "mg")
+                sample = curve["Sample"]
+                self.assertEqual(sample.attrs["text"], "H2O (0.0 °C, 334.50 J/g), 1.3808 mg")
+                self.assertEqual(sample.attrs["name"], "H2O (0.0 °C, 334.50 J/g)")
+                self.assertEqual(sample["mass"].attrs["value"], 1.3808)
+                self.assertEqual(sample["mass"].attrs["unit"], "mg")
 
     def test_formulas_and_text_after_section(self):
         fields = stare_parser.parse_section_fields([

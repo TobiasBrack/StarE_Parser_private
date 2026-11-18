@@ -133,16 +133,20 @@ def parse_section_fields(lines):
     sections.pop("Adjustment", None)
 
     fields = {name: "\n".join(values) for name, values in sections.items()}
-    sample = fields.get("Sample", "")
-    if sample:
-        name, separator, mass = sample.rpartition(",")
+    if "Sample" in fields:
+        text = fields["Sample"]
+        name, separator, mass = text.rpartition(",")
         match = SAMPLE_MASS.fullmatch(mass.strip()) if separator and name.strip() else None
-        fields["sample_name"] = name.strip() if match else sample
+        sample = {
+            "text": text,
+            "name": name.strip() if match else text,
+        }
         if match:
-            fields["sample_mass"] = {
+            sample["mass"] = {
                 "value": float(match.group(1)),
                 "unit": match.group(2),
             }
+        fields["Sample"] = sample
     if unsectioned:
         fields["unsectioned"] = "\n".join(unsectioned)
     adjustment = _parse_adjustment(lines)
@@ -396,7 +400,7 @@ def write_h5(parsed, out_path):
             for key, value in c.items():
                 if key in {"name", "label", "measured", "n_rows", "data", "results"}:
                     continue
-                if key == "sample_mass":
+                if key == "Sample":
                     write_adjustment(g, key, value)
                 elif key == "Adjustment":
                     ag = g.create_group(key)
